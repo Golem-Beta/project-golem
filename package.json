@@ -1,0 +1,28 @@
+{
+  "name": "project-golem",
+  "version": "1.0.0",
+  "description": "A Vibe Coding experiment: Headless browser agent powered by Gemini & Ollama.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "ai-agent",
+    "puppeteer",
+    "ollama",
+    "gemini",
+    "telegram-bot"
+  ],
+  "author": "Vibe Coder",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "node-telegram-bot-api": "^0.64.0",
+    "ollama": "^0.5.0",
+    "puppeteer": "^21.5.2",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  }
+}
+
+
