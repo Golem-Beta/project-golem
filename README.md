@@ -23,3 +23,14 @@ cd project-golem
 
 # 安裝零件
 npm install
+
+2. 設定
+複製 .env.example 為 .env，並填入你的 Telegram Bot Token。
+
+3. 啟動
+node index.js
+首次啟動時會跳出 Chrome，請手動登入 Google 帳號一次。之後魔像就會自動記憶了！
+
+Created with ❤️ by Arvin_Chen
+
+
