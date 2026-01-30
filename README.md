@@ -2,15 +2,6 @@
 Headless browser agent powered by Gemini &amp; Ollama.
 
 ---
-
-### 📋 建議操作
-
-1. 在專案根目錄建立一個 `README.md` 檔案。
-2. 將以下內容複製貼上。
-3. (選用) 如果你有截圖，將圖片放入 `screenshots/` 資料夾並修改連結。
-
----
-
 ```markdown
 # 🦞 Project Golem (魔像計畫)
 
