@@ -1,444 +1,344 @@
 /**
- * 🦞 Project Golem v3.5 (Fortress Ultimate)
+ * 🦞 Project Golem v6.0 (Fortress Edition)
  * ---------------------------------------------------
- * 核心架構：
- * 1. [Browser Core] Puppeteer 控制 Gemini 網頁版
- * 2. [Security Manager] 路徑沙盒化 + 風險分級控制 (RBAC)
- * 3. [Agent Protocol] JSON 通訊協議，支援 File I/O 與 Shell Execution
- * 4. [Privilege Escalation] 針對系統安裝指令 (brew/apt) 的動態權限提升
+ * 架構：[Gemini 大腦] -> [Ollama 翻譯官] -> [Security 審計官] -> [Node.js 執行者]
+ * 特性：情緒回饋、指令拆解、風險分級、中斷確認
  */
 
 require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const puppeteer = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { default: ollama } = require('ollama');
-const fs = require('fs');
-const path = require('path');
+const { Ollama } = require('ollama');
 const { exec } = require('child_process');
-const { v4: uuidv4 } = require('uuid'); // 用來生成任務 ID
-
-// 1. 隱形模式啟用
-puppeteer.use(StealthPlugin());
+const { v4: uuidv4 } = require('uuid'); // 用於生成唯一的審核 ID
 
 // --- ⚙️ 全域配置 ---
 const CONFIG = {
     TOKEN: process.env.TELEGRAM_TOKEN,
     USER_DATA_DIR: process.env.USER_DATA_DIR || './golem_memory',
-    DEBUG_DIR: './debug_screenshots',
-    TIMEOUT: 120000, // 2分鐘超時
-    
-    // 📦 安全沙盒：Gemini 預設只能在這裡面玩
-    WORKSPACE: path.resolve('./golem_workspace'),
-
-    // 🚦 風險策略表 (AUTO: 自動, ASK: 詢問, STRICT: 警告)
-    POLICIES: {
-        'search': 'AUTO',        // 聯網搜尋
-        'read_file': 'ASK',      // 讀檔
-        'write_file': 'ASK',     // 寫檔/改檔
-        'delete_file': 'STRICT', // 刪檔
-        'exec_shell': 'ASK',     // 執行指令 (白名單會變 AUTO)
-        'install': 'STRICT'      // 安裝工具
-    },
-
-    // 🟢 白名單指令 (低風險，自動放行)
-    SAFE_COMMANDS: ['ls', 'dir', 'date', 'echo', 'whoami', 'pwd', 'cat', 'type', 'grep']
+    OLLAMA_MODEL: 'llama3', // 建議使用 llama3 或 mistral
+    SPLIT_TOKEN: '---GOLEM_ACTION_PLAN---', // 雙腦協議分隔線
+    ADMIN_ID: process.env.ADMIN_ID // (選填) 限制只能由特定 ID 操作
 };
 
-// --- 初始化檢查 ---
-if (!CONFIG.TOKEN) { console.error('❌ 請設定 .env 的 TELEGRAM_TOKEN'); process.exit(1); }
-if (!fs.existsSync(CONFIG.DEBUG_DIR)) fs.mkdirSync(CONFIG.DEBUG_DIR);
-if (!fs.existsSync(CONFIG.WORKSPACE)) fs.mkdirSync(CONFIG.WORKSPACE);
-
-// --- 🧠 Agent 系統提示詞 (System Prompt) ---
-const SYSTEM_PROMPT = `
-【Agent 模式啟動】
-你現在是 Golem 系統管理員。你的預設工作目錄是: ./golem_workspace
-當使用者請求操作電腦時，請輸出以下 JSON 格式 (不要解釋，只給 JSON)：
-
-1. 執行指令 (Shell):
-\`\`\`json
-{"type": "exec_shell", "cmd": "ls -la", "reason": "查看檔案列表"}
-\`\`\`
-
-2. 系統安裝 (需要 root 權限):
-\`\`\`json
-{"type": "install", "cmd": "brew install ffmpeg", "reason": "安裝轉檔工具"}
-\`\`\`
-
-3. 讀寫檔案:
-\`\`\`json
-{"type": "write_file", "path": "hello.py", "content": "print('Hi')", "reason": "建立腳本"}
-\`\`\`
-
-⚠️ 注意：
-1. 嚴禁 rm -rf / 或格式化指令。
-2. 盡量使用相對路徑操作檔案。
-`;
+// --- 初始化組件 ---
+puppeteer.use(StealthPlugin());
+const ollama = new Ollama();
+const bot = new TelegramBot(CONFIG.TOKEN, { polling: true });
+const pendingTasks = new Map(); // 暫存等待審核的任務
 
 // ============================================================
-// 🛡️ Security Manager (安全管家)
+// 🛡️ Security Manager (風險審計官)
 // ============================================================
 class SecurityManager {
-    // 驗證路徑是否越獄
-    verifyPath(userPath) {
-        if (!userPath) return { safe: true };
-        const absolutePath = path.resolve(CONFIG.WORKSPACE, userPath);
-        
-        // 檢查路徑開頭是否在 WORKSPACE 內
-        if (!absolutePath.startsWith(CONFIG.WORKSPACE)) {
-            return { safe: false, reason: `🚫 路徑越獄攔截: 禁止存取沙盒外路徑 (${userPath})` };
-        }
-        return { safe: true, path: absolutePath };
+    constructor() {
+        this.SAFE_COMMANDS = ['ls', 'dir', 'pwd', 'date', 'echo', 'cat', 'grep', 'find', 'whoami', 'tail', 'head'];
+        this.BLOCK_PATTERNS = [
+            /rm\s+-rf\s+\//, // 禁止刪根目錄
+            />\s*\/dev\/sd/, // 禁止寫入硬碟裝置
+            /:(){:|:&};:/,   // 禁止 Fork Bomb
+            /mkfs/           // 禁止格式化
+        ];
     }
 
-    // 評估風險
-    evaluateRisk(intent) {
-        let policy = CONFIG.POLICIES[intent.type] || 'STRICT';
-        
-        // 特例：白名單指令降級為 AUTO
-        if (intent.type === 'exec_shell') {
-            const baseCmd = intent.cmd.trim().split(' ')[0];
-            if (CONFIG.SAFE_COMMANDS.includes(baseCmd)) {
-                policy = 'AUTO';
-            }
+    assess(cmd) {
+        const baseCmd = cmd.trim().split(/\s+/)[0];
+
+        // 1. 黑名單攔截 (☠️)
+        if (this.BLOCK_PATTERNS.some(regex => regex.test(cmd))) {
+            return { level: 'BLOCKED', reason: '偵測到毀滅性指令' };
         }
 
-        // 路徑檢查
-        if (intent.path) {
-            const pathCheck = this.verifyPath(intent.path);
-            if (!pathCheck.safe) return { action: 'DENY', reason: pathCheck.reason };
-            intent.absolutePath = pathCheck.path; // 注入絕對路徑
+        // 2. 白名單放行 (🟢)
+        if (this.SAFE_COMMANDS.includes(baseCmd)) {
+            return { level: 'SAFE' };
         }
 
-        if (policy === 'AUTO') return { action: 'ALLOW', risk: '🟢' };
-        if (policy === 'ASK') return { action: 'CONFIRM', risk: '🟡' };
-        if (policy === 'STRICT') return { action: 'CONFIRM_STRICT', risk: '🔴' };
-        
-        return { action: 'DENY', reason: "Unknown Policy" };
+        // 3. 高風險判定 (🔴)
+        const dangerousOps = ['rm', 'mv', 'chmod', 'chown', 'sudo', 'su', 'shutdown', 'reboot'];
+        if (dangerousOps.includes(baseCmd)) {
+            return { level: 'DANGER', reason: '涉及檔案刪除或系統變更' };
+        }
+
+        // 4. 其餘視為警告 (🟡)
+        return { level: 'WARNING', reason: '系統操作需確認' };
     }
 }
-const security = new SecurityManager();
-
-// 用來暫存待審核任務的 Map (避免 Base64 過長)
-const pendingTasks = new Map();
 
 // ============================================================
-// 🧱 GolemBrowser (瀏覽器核心)
+// 🧠 Golem Brain (Gemini Web)
 // ============================================================
-class GolemBrowser {
+class GolemBrain {
     constructor() {
         this.browser = null;
         this.page = null;
-        this.isInitializing = false;
     }
 
     async init() {
-        if (this.browser && this.page && !this.page.isClosed()) return;
-        if (this.isInitializing) return;
-
-        this.isInitializing = true;
-        console.log('🧱 啟動瀏覽器...');
-        try {
-            this.browser = await puppeteer.launch({
-                headless: false, // 建議 false 以避免被 Google 封鎖
-                userDataDir: CONFIG.USER_DATA_DIR,
-                defaultViewport: null,
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1280,900']
-            });
-            
-            const pages = await this.browser.pages();
-            this.page = pages.length > 0 ? pages[0] : await this.browser.newPage();
-            
-            // 偽裝 UA
-            await this.page.setUserAgent('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
-            
-            console.log('🌊 連線 Gemini...');
-            await this.page.goto('https://gemini.google.com/app', { waitUntil: 'networkidle2' });
-        } catch (e) {
-            console.error('❌ 啟動失敗:', e);
-            await this.cleanup();
-        } finally {
-            this.isInitializing = false;
-        }
-    }
-
-    async cleanup() {
-        if (this.browser) await this.browser.close().catch(()=>{});
-        this.browser = null;
-        this.page = null;
-    }
-
-    async resetChat() {
-        await this.init();
-        try {
-            await this.page.goto('https://gemini.google.com/app', { waitUntil: 'networkidle2' });
-            // 靜默注入 Prompt
-            await this.sendMessage(SYSTEM_PROMPT, true);
-            return "已重置對話，安全防護網已啟動 🛡️";
-        } catch (e) { return "重置失敗"; }
+        if (this.browser) return;
+        console.log('🧠 [Brain] 啟動 Gemini...');
+        this.browser = await puppeteer.launch({
+            headless: false, // 首次執行請設為 false 以便登入
+            userDataDir: CONFIG.USER_DATA_DIR,
+            args: ['--no-sandbox', '--window-size=1280,900']
+        });
+        
+        const pages = await this.browser.pages();
+        this.page = pages.length > 0 ? pages[0] : await this.browser.newPage();
+        await this.page.goto('https://gemini.google.com/app', { waitUntil: 'networkidle2' });
+        
+        // 注入雙重人格 Prompt
+        const systemPrompt = `
+        【指令】你現在是 Golem 系統管理員。
+        當使用者提出請求時，請將回應分為兩部分：
+        1. 【對話部分】：用溫暖、專業的語氣回覆使用者。
+        2. 【操作部分】：若需執行電腦指令，請在分隔線後列出計畫。
+        
+        分隔線為：${CONFIG.SPLIT_TOKEN}
+        
+        範例：
+        好的，我來幫您清除暫存檔。
+        ${CONFIG.SPLIT_TOKEN}
+        1. 執行 ls -lh /tmp 查看大小
+        2. 執行 rm -rf /tmp/* 清空
+        `;
+        await this.sendMessage(systemPrompt, true);
+        console.log('🧠 [Brain] 雙重人格已就緒。');
     }
 
     async sendMessage(text, isSystem = false) {
-        await this.init();
-        const page = this.page;
-
+        if (!this.browser) await this.init();
         try {
-            const selectors = ['div[contenteditable="true"]', 'rich-textarea > div', 'div[role="textbox"]'];
-            await page.waitForSelector(selectors.join(','), { timeout: 10000 });
-
-            // DOM 操作極速輸入
-            await page.evaluate((sel, msg) => {
+            const selector = 'div[contenteditable="true"], rich-textarea > div';
+            await this.page.waitForSelector(selector, { timeout: 15000 });
+            
+            await this.page.evaluate((sel, txt) => {
                 const el = document.querySelector(sel);
-                if (el) {
-                    el.focus();
-                    el.innerHTML = '';
-                    document.execCommand('insertText', false, msg);
-                }
-            }, selectors[0], text);
-
+                el.focus();
+                document.execCommand('insertText', false, txt);
+            }, selector, text);
+            
             await new Promise(r => setTimeout(r, 800));
-            await page.keyboard.press('Enter');
+            await this.page.keyboard.press('Enter');
 
-            if (isSystem) {
-                await new Promise(r => setTimeout(r, 2000));
-                return "System Prompt Injected";
-            }
+            if (isSystem) { await new Promise(r => setTimeout(r, 2000)); return; }
 
-            console.log('⏳ 等待回應...');
-            // 智慧等待：Stop 按鈕消失且 Loading 動畫消失
-            await page.waitForFunction(() => {
+            console.log('🧠 [Brain] 思考中...');
+            await this.page.waitForFunction(() => {
                 const stopBtn = document.querySelector('[aria-label="Stop generating"], [aria-label="停止產生"]');
                 const thinking = document.querySelector('.streaming-icon');
                 return !stopBtn && !thinking;
-            }, { timeout: CONFIG.TIMEOUT, polling: 500 });
+            }, { timeout: 120000, polling: 1000 });
 
-            const response = await page.evaluate(() => {
+            return await this.page.evaluate(() => {
                 const bubbles = document.querySelectorAll('message-content, .model-response-text');
-                return bubbles.length ? bubbles[bubbles.length - 1].innerText : null;
+                return bubbles.length ? bubbles[bubbles.length - 1].innerText : "";
             });
+        } catch (e) { return `Brain Error: ${e.message}`; }
+    }
+}
 
-            if (!response) throw new Error("無回應");
-            return response;
+// ============================================================
+// 🦎 Golem Translator (Ollama)
+// ============================================================
+class GolemTranslator {
+    async parse(planText) {
+        if (!planText || planText.trim().length < 2) return [];
+        console.log('🦎 [Translator] 解析指令中...');
+        
+        const prompt = `
+        【任務】從下方文字提取 Shell 指令。
+        【文字】"${planText}"
+        【格式】JSON Array: [{"cmd": "ls", "desc": "說明"}]
+        【規則】只輸出 JSON，忽略解釋。
+        `;
 
-        } catch (error) {
-            const filename = `${CONFIG.DEBUG_DIR}/error_${Date.now()}.png`;
-            await page.screenshot({ path: filename });
-            console.log(`📸 錯誤截圖: ${filename}`);
-            throw error;
+        try {
+            const res = await ollama.chat({
+                model: CONFIG.OLLAMA_MODEL,
+                messages: [{ role: 'user', content: prompt }],
+                format: 'json',
+                stream: false
+            });
+            return JSON.parse(res.message.content).steps || [];
+        } catch (e) {
+            console.error('🦎 解析失敗:', e);
+            return [];
         }
     }
 }
 
 // ============================================================
-// 🤖 Telegram Bot Logic
+// ⚡ Task Controller (核心控制與執行)
 // ============================================================
-const bot = new TelegramBot(CONFIG.TOKEN, { polling: true });
-const golem = new GolemBrowser();
-let messageQueue = Promise.resolve();
-
-// --- 意圖處理核心 ---
-async function handleGeminiIntent(chatId, text) {
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-    
-    // 1. 無 JSON -> 普通對話
-    if (!jsonMatch) return handleNormalResponse(chatId, text);
-
-    // 2. 解析 JSON
-    let intent;
-    try {
-        intent = JSON.parse(jsonMatch[1]);
-    } catch (e) {
-        return bot.sendMessage(chatId, `⚠️ JSON 解析失敗: ${e.message}`);
+class TaskController {
+    constructor() {
+        this.executor = new Executor();
+        this.security = new SecurityManager();
     }
 
-    console.log('🤖 意圖偵測:', intent);
+    // 執行步驟序列 (支援遞迴恢復)
+    async runSequence(chatId, steps, startIndex = 0) {
+        let logBuffer = "";
 
-    // 3. 安全審計
-    const assessment = security.evaluateRisk(intent);
-    
-    if (assessment.action === 'DENY') {
-        return bot.sendMessage(chatId, `⛔ **攔截**\n${assessment.reason}`, { parse_mode: 'Markdown' });
-    }
+        for (let i = startIndex; i < steps.length; i++) {
+            const step = steps[i];
+            const risk = this.security.assess(step.cmd);
 
-    if (assessment.action === 'ALLOW') {
-        await executeTask(chatId, intent);
-        return;
-    }
-
-    // 4. 需要人工確認 (Ask/Strict)
-    // 存入 Map 並生成 UUID
-    const taskId = uuidv4();
-    pendingTasks.set(taskId, intent);
-
-    const isStrict = assessment.action === 'CONFIRM_STRICT';
-    const opts = {
-        reply_markup: {
-            inline_keyboard: [[
-                { text: isStrict ? '🔥 Root 授權執行' : '✅ 批准', callback_data: `EXEC:${taskId}` },
-                { text: '🛡️ 駁回', callback_data: `DENY:${taskId}` }
-            ]]
-        }
-    };
-
-    const msg = `
-${assessment.risk} **請求授權**
-━━━━━━━━━━━━━━
-🤖 動作：\`${intent.type}\`
-📂 目標：\`${intent.path || intent.cmd || 'N/A'}\`
-📝 理由：${intent.reason}
-━━━━━━━━━━━━━━
-${isStrict ? '⚠️ 警告：此操作可能涉及系統變更或越獄。' : '需授權以存取沙盒。'}
-    `;
-    return bot.sendMessage(chatId, msg, { parse_mode: 'Markdown', ...opts });
-}
-
-// --- 任務執行器 (支援特權升級) ---
-async function executeTask(chatId, intent) {
-    const actionMsg = await bot.sendMessage(chatId, `⚙️ 執行中: ${intent.type}...`);
-    
-    try {
-        let result = '';
-        let execOptions = { cwd: CONFIG.WORKSPACE }; // 預設：關在沙盒
-
-        // A. Shell 指令 & 安裝
-        if (intent.type === 'exec_shell' || intent.type === 'install') {
-            
-            // 🚨 特權檢查：是否為系統級安裝指令
-            const systemInstallers = ['brew', 'apt', 'apt-get', 'choco', 'winget', 'npm install -g'];
-            const isSystemInstall = systemInstallers.some(installer => intent.cmd.startsWith(installer));
-
-            if (isSystemInstall) {
-                // 如果能執行到這裡，代表使用者已經按了「🔥 Root 授權執行」
-                // 暫時將執行目錄切換到根目錄 (或不指定 cwd 以使用系統預設)
-                execOptions.cwd = process.cwd(); 
-                console.log(`⚠️ PRIVILEGE ESCALATION: Running in Root -> ${intent.cmd}`);
+            // 1. ☠️ 攔截 Blocked
+            if (risk.level === 'BLOCKED') {
+                await bot.sendMessage(chatId, `⛔ **已攔截危險指令**：\`${step.cmd}\`\n理由：${risk.reason}`, { parse_mode: 'Markdown' });
+                return; // 強制中止
             }
 
-            result = await new Promise((resolve) => {
-                exec(intent.cmd, execOptions, (err, stdout, stderr) => {
-                    if (err) resolve(`❌ 失敗:\n${stderr || err.message}`);
-                    else resolve(`✅ 成功:\n${stdout}\n${stderr ? `(Info: ${stderr})` : ''}`);
+            // 2. 🟡🔴 需審核 Warning/Danger
+            if (risk.level === 'WARNING' || risk.level === 'DANGER') {
+                // 暫存任務
+                const approvalId = uuidv4();
+                pendingTasks.set(approvalId, {
+                    steps: steps,
+                    nextIndex: i, // 標記當前步驟（執行時會執行這一步）
+                    chatId: chatId
                 });
-            });
+
+                // 發送確認按鈕
+                const riskIcon = risk.level === 'DANGER' ? '🔥' : '⚠️';
+                const msg = `
+${riskIcon} **操作請求確認** (${i + 1}/${steps.length})
+━━━━━━━━━━━━━━━━
+指令：\`${step.cmd}\`
+說明：${step.desc}
+風險：${risk.reason}
+━━━━━━━━━━━━━━━━
+`;
+                await bot.sendMessage(chatId, msg, {
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '✅ 批准執行', callback_data: `APPROVE:${approvalId}` },
+                            { text: '🛡️ 駁回', callback_data: `DENY:${approvalId}` }
+                        ]]
+                    }
+                });
+                
+                return; // 暫停迴圈，等待回調
+            }
+
+            // 3. 🟢 安全指令直接執行
+            await bot.sendMessage(chatId, `⚙️ *Step ${i + 1}:* ${step.desc}\n\`${step.cmd}\``, { parse_mode: 'Markdown' });
+            try {
+                const output = await this.executor.run(step.cmd);
+                logBuffer += `✅ [${step.cmd}] OK\n`;
+            } catch (err) {
+                await bot.sendMessage(chatId, `❌ **執行失敗**：\`${step.cmd}\`\n${err}`);
+                return;
+            }
         }
-
-        // B. 檔案操作 (已由 SecurityManager 確保路徑安全)
-        else if (intent.type === 'read_file') {
-            if (!fs.existsSync(intent.absolutePath)) throw new Error("檔案不存在");
-            const content = fs.readFileSync(intent.absolutePath, 'utf-8');
-            result = `📄 **${intent.path}**\n\`\`\`\n${content.substring(0, 3000)}\n\`\`\``;
-        }
-
-        else if (intent.type === 'write_file') {
-            fs.writeFileSync(intent.absolutePath, intent.content);
-            result = `💾 已寫入: \`${intent.path}\``;
-        }
-
-        // 回傳結果 (長度截斷)
-        const finalMsg = result.length > 3800 ? result.substring(0, 3800) + '... (下略)' : result;
-        await bot.editMessageText(finalMsg, { chat_id: chatId, message_id: actionMsg.message_id, parse_mode: 'Markdown' });
-
-    } catch (error) {
-        await bot.editMessageText(`❌ 錯誤: ${error.message}`, { chat_id: chatId, message_id: actionMsg.message_id });
-    }
-}
-
-// --- 普通訊息與摘要 ---
-async function handleNormalResponse(chatId, text) {
-    if (text.length > 4000) {
-        // 嘗試用 Ollama 摘要
-        try {
-             bot.sendChatAction(chatId, 'typing');
-             const summary = await ollama.chat({
-                model: 'llama3.2:3b', // 需確保有此模型
-                messages: [{ role: 'user', content: `摘要重點 (繁體中文):\n${text.substring(0, 2000)}` }] 
-             });
-             await bot.sendMessage(chatId, `🧠 **重點摘要:**\n${summary.message.content}`, { parse_mode: 'Markdown' });
-        } catch(e) { /* Ollama 沒開就算了 */ }
-
-        // 切分發送
-        const chunks = text.match(/.{1,4000}/g);
-        for (const chunk of chunks) await bot.sendMessage(chatId, chunk);
-    } else {
-        try {
-            await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
-        } catch {
-            await bot.sendMessage(chatId, text); // 降級為純文字
-        }
-    }
-}
-
-// ============================================================
-// 🎮 事件監聽 (Event Loop)
-// ============================================================
-
-bot.on('message', (msg) => {
-    messageQueue = messageQueue.then(async () => {
-        const chatId = msg.chat.id;
-        const text = msg.text;
-        if (!text) return;
-
-        if (text === '/start') return bot.sendMessage(chatId, '👋 Golem v3.5 (Fortress) Online.\n輸入 /new 初始化 Agent 環境。');
         
-        if (text === '/new') {
-            const status = await golem.resetChat();
-            return bot.sendMessage(chatId, status);
+        await bot.sendMessage(chatId, `🎉 **所有任務執行完畢**\n${logBuffer}`);
+    }
+}
+
+class Executor {
+    run(cmd) {
+        return new Promise((resolve, reject) => {
+            console.log(`⚡ Exec: ${cmd}`);
+            exec(cmd, { cwd: process.cwd() }, (err, stdout, stderr) => {
+                if (err) reject(stderr || err.message);
+                else resolve(stdout);
+            });
+        });
+    }
+}
+
+// ============================================================
+// 🎮 主程式邏輯
+// ============================================================
+const brain = new GolemBrain();
+const translator = new GolemTranslator();
+const controller = new TaskController();
+
+(async () => await brain.init())();
+
+// 1. 訊息監聽
+bot.on('message', async (msg) => {
+    const chatId = msg.chat.id;
+    const text = msg.text;
+    if (!text) return;
+
+    // 權限檢查 (可選)
+    if (CONFIG.ADMIN_ID && String(chatId) !== CONFIG.ADMIN_ID) {
+        return bot.sendMessage(chatId, "🚫 未授權的使用者。");
+    }
+
+    bot.sendChatAction(chatId, 'typing');
+
+    try {
+        // A. Gemini 思考
+        const raw = await brain.sendMessage(text);
+        const [chatPart, planPart] = raw.split(CONFIG.SPLIT_TOKEN);
+
+        // B. 優先回覆對話
+        if (chatPart && chatPart.trim()) {
+            await bot.sendMessage(chatId, chatPart.trim());
         }
 
-        const thinkingMsg = await bot.sendMessage(chatId, '🧱 Golem 思考中...');
-        bot.sendChatAction(chatId, 'typing');
-
-        try {
-            // 1. 取得 Gemini 回應
-            const response = await golem.sendMessage(text);
-            await bot.deleteMessage(chatId, thinkingMsg.message_id).catch(()=>{});
-            
-            // 2. 意圖判斷與執行
-            await handleGeminiIntent(chatId, response);
-
-        } catch (error) {
-            await bot.editMessageText(`⚠️ 系統錯誤: ${error.message}\n(嘗試自我修復中...)`, { chat_id: chatId, message_id: thinkingMsg.message_id });
-            await golem.cleanup(); // 嘗試重啟瀏覽器
+        // C. 處理計畫 (如果有)
+        if (planPart && planPart.trim()) {
+            const steps = await translator.parse(planPart.trim());
+            if (steps.length > 0) {
+                // 開始執行序列 (從第 0 步開始)
+                await controller.runSequence(chatId, steps, 0);
+            }
         }
-    }).catch(console.error);
+    } catch (e) {
+        console.error(e);
+        bot.sendMessage(chatId, `❌ 系統錯誤: ${e.message}`);
+    }
 });
 
-// 按鈕回調
+// 2. 按鈕回調監聽 (審核機制)
 bot.on('callback_query', async (query) => {
     const { id, data, message } = query;
-    const chatId = message.chat.id;
     const [action, taskId] = data.split(':');
+    const task = pendingTasks.get(taskId);
 
-    // 駁回
+    if (!task) {
+        return bot.answerCallbackQuery(id, { text: '任務已過期或失效' });
+    }
+
+    // 清除按鈕
+    await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: message.chat.id, message_id: message.message_id });
+
     if (action === 'DENY') {
         pendingTasks.delete(taskId);
-        await bot.answerCallbackQuery(id, { text: '已取消' });
-        await bot.editMessageText('🛡️ 操作已由使用者駁回。', { chat_id: chatId, message_id: message.message_id });
+        await bot.sendMessage(message.chat.id, '🛡️ **操作已由使用者駁回，任務中止。**', { parse_mode: 'Markdown' });
         return;
     }
 
-    // 執行
-    if (action === 'EXEC') {
-        const intent = pendingTasks.get(taskId);
-        if (!intent) {
-            await bot.answerCallbackQuery(id, { text: '任務已過期' });
-            return;
-        }
+    if (action === 'APPROVE') {
+        await bot.answerCallbackQuery(id, { text: '授權通過，繼續執行...' });
+        const { steps, nextIndex, chatId } = task;
+        
+        // 執行當前這一步 (因為之前暫停了)
+        const currentStep = steps[nextIndex];
+        try {
+            await bot.sendMessage(chatId, `🔥 **已授權執行**: \`${currentStep.cmd}\``, { parse_mode: 'Markdown' });
+            await new Executor().run(currentStep.cmd);
+            
+            // 移除暫存
+            pendingTasks.delete(taskId);
 
-        await bot.answerCallbackQuery(id, { text: '授權通過，執行中...' });
-        
-        // 重新注入絕對路徑 (因為 Map 裡存的是原始 intent，需要確保安全檢查後的路徑還在)
-        // 這裡重新跑一次 verify 確保萬無一失
-        if (intent.path) {
-            const check = security.verifyPath(intent.path);
-            if (check.safe) intent.absolutePath = check.path;
+            // 🔄 遞迴：繼續執行剩下的步驟 (nextIndex + 1)
+            await controller.runSequence(chatId, steps, nextIndex + 1);
+
+        } catch (e) {
+            await bot.sendMessage(chatId, `❌ 執行失敗: ${e}`);
+            pendingTasks.delete(taskId);
         }
-        
-        await executeTask(chatId, intent);
-        pendingTasks.delete(taskId); // 清除任務
     }
 });
 
-console.log('📡 Golem v3.5 (Fortress Ultimate) 啟動完成。');
-console.log(`📂 安全沙盒位置: ${CONFIG.WORKSPACE}`);
+console.log('📡 Golem v6.0 (Fortress) is Online.');
+console.log('🛡️ Security Protocols Active.');
