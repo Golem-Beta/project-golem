@@ -1,157 +1,130 @@
 # project-golem
 Headless browser agent powered by Gemini &amp; Ollama.
 
---
-# 🦞 Project Golem (魔像計畫)
+# 🦞 Project Golem v6.0 (Fortress Edition) 魔像計畫
 
-![Version](https://img.shields.io/badge/version-v3.5_Fortress-blue) ![Node.js](https://img.shields.io/badge/Node.js-18%2B-green) ![License](https://img.shields.io/badge/license-MIT-orange)
+![GitHub license](https://img.shields.io/github/license/Arvincreator/project-golem)
+![GitHub repo size](https://img.shields.io/github/repo-size/Arvincreator/project-golem)
+![Node.js](https://img.shields.io/badge/node-%3E%3D16.0-green.svg)
+![Status](https://img.shields.io/badge/status-active-brightgreen.svg)
 
-> **一個基於 Puppeteer 與 Gemini 的「瀏覽器自動化」AI 代理人。**
-> 無需 API Key，直接賦予 Telegram 機器人操作電腦與聯網思考的能力，並具備企業級的沙盒安全機制。
+> **"Two Brains, One Body, Absolute Control."**
 
----
+**Project Golem** 是一個基於 **雙腦架構 (Dual-Brain Architecture)** 的本機自動化 Agent。它利用 **Google Gemini** 的強大認知能力作為「大腦」，配合 **Ollama (Local LLM)** 作為「小腦」進行精準的指令拆解，並透過 **Telegram** 介面安全地控制您的電腦。
 
-## 📖 關於專案 (About)
-
-**Project Golem** 是一個實驗性的 AI Agent 系統。與傳統調用 API 的機器人不同，Golem 透過 **Puppeteer** 直接模擬真人操作 Google Gemini 網頁版，實現了「零成本」的無限長文本對話與邏輯推理。
-
-在 **v3.5 Fortress Edition** 中，我們引入了 **動態權限提升 (Dynamic Privilege Escalation)** 與 **檔案沙盒 (File System Sandboxing)**，讓 AI 能夠在安全受控的環境下執行 Shell 指令、讀寫檔案，甚至在獲得授權後安裝系統工具。
-
-### 🔥 核心亮點
-* **🧠 免費無限大腦**：直接使用 Google Gemini Web 版，無 Token 限制。
-* **🛡️ 雙層安全沙盒**：預設鎖定在 `./golem_workspace`，防止誤刪系統檔案。
-* **🚦 三級風險控制**：
-    * 🟢 **綠區 (Auto)**：搜尋、思考、讀取公開資訊 -> 自動執行。
-    * 🟡 **黃區 (Ask)**：讀寫沙盒內檔案 -> 需按鈕確認。
-    * 🔴 **紅區 (Strict)**：系統安裝 (`brew`/`apt`)、刪除檔案 -> 需「Root 授權」按鈕。
-* **⚡ 動態權限提升**：針對系統安裝指令，經人工授權後可暫時跳出沙盒執行。
-* **🔧 自我修復機制**：瀏覽器崩潰或卡住時自動重啟 Session。
+v6.0 版本引入了 **Fortress Security Protocol**，具備指令風險分級與審核機制，確保 AI 在強大的同時絕對安全。
 
 ---
 
-## 🛠️ 技術架構 (Architecture)
+## 🌟 核心特性 (Key Features)
 
-```mermaid
-graph TD
-    User[Telegram User] -->|傳送訊息| Bot(Node.js Controller)
-    Bot -->|JSON Protocol| Browser(Puppeteer / Gemini Web)
-    Bot -->|摘要請求| Ollama(Local Llama 3)
-    
-    subgraph Security Layer
-    Bot --x|攔截危險指令| System
-    Bot -->|安全檢查| Sandbox[./golem_workspace]
-    end
-    
-    Browser -->|思考結果| Bot
-    Bot -->|回傳結果| User
+### 🧠 雙腦協作 (Dual-Brain System)
+- **大腦 (Gemini Web)**：負責自然語言理解、複雜邏輯推演與情緒化對話。
+- **小腦 (Ollama/Llama3)**：負責將大腦的意圖「翻譯」為標準化的 Shell 指令 JSON，去除雜訊。
+
+### 🛡️ 堡壘級安全 (Fortress Security)
+- **風險分級控制 (RBAC)**：
+    - 🟢 **Safe**：讀取類指令 (`ls`, `cat`) -> 自動執行。
+    - 🟡 **Warning**：變更類指令 (`npm install`) -> 需按鈕批准。
+    - 🔴 **Danger**：高風險指令 (`rm`, `mv`) -> 紅色警告 + 強制確認。
+    - ☠️ **Blocked**：毀滅性指令 (`rm -rf /`) -> 直接攔截。
+- **斷點續傳**：遇到審核時自動暫停任務，批准後無縫接續執行。
+
+### 🎭 協議分割 (Split-Protocol)
+- **雙重人格回應**：同時輸出「給使用者的暖心回覆」與「給系統的冷酷指令」。
+- **即時反饋**：Node.js 優先處理對話，讓使用者感覺零延遲，隨後背景執行任務。
+
+### 👻 隱身模式 (Stealth Mode)
+- 內建 `puppeteer-extra-plugin-stealth`，完美偽裝成真人瀏覽器，防止 Google 偵測與封鎖。
+
+---
+
+## 🏗️ 系統架構 (Architecture)
+
+```ascii
+[👑 使用者 (Telegram)]
+       ↕️
+[🤖 Node.js 控制器] ─────────────┐
+       │ (1. 對話文本)            │
+       ▼                        │
+[🧠 Gemini Web (大腦)]            │
+       │ "好，我幫你檢查 log..."   │
+       │ ---分隔線---             │
+       │ "1. cat /var/log/syslog" │
+       │                        │
+       ▼ (2. 技術計畫)            │
+[🦎 Ollama (小腦/翻譯)]            │ (4. 情緒回覆)
+       │                        │
+       ▼ (3. JSON 步驟)           │
+[🛡️ Security Manager] ◀─────────┘
+       │ (審核 Pass/Approve)
+       ▼
+[⚡ Executor (手腳)] ──> [💻 本機 Shell]
 
 ```
 
 ---
 
-## 🚀 安裝指南 (Installation)
+## 🚀 快速開始 (Getting Started)
 
 ### 1. 環境準備
 
-請確保你的系統已安裝：
+* **Node.js** (v16+)
+* **Ollama** (需安裝並啟動)
+* **Google 帳號** (用於 Gemini)
+* **Telegram Bot Token**
 
-* **Node.js** (v18 以上)
-* **Google Chrome** (建議安裝以獲得最佳相容性)
-* **Ollama** (選用，用於長文摘要)
-
-### 2. 下載專案
+### 2. 安裝依賴
 
 ```bash
-git clone [https://github.com/YourUsername/project-golem.git](https://github.com/YourUsername/project-golem.git)
+git clone [https://github.com/Arvincreator/project-golem.git](https://github.com/Arvincreator/project-golem.git)
 cd project-golem
+npm install
 
 ```
 
-### 3. 安裝依賴
+### 3. 設定 Ollama
+
+確保本機 Ollama 服務已啟動，並已下載 `llama3` 模型（或 mistral）：
 
 ```bash
-npm install
-# 核心套件：puppeteer, node-telegram-bot-api, dotenv, ollama
+ollama serve
+ollama pull llama3
 
 ```
 
 ### 4. 設定環境變數
 
-請複製 `.env.example` 為 `.env` 並填入資訊：
+複製 `.env.example` 並重新命名為 `.env`：
 
-```bash
-cp .env.example .env
-
-```
-
-**`.env` 設定範例：**
-
-```ini
-# Telegram Bot Token (向 @BotFather 申請)
-TELEGRAM_TOKEN=123456789:ABCdefGhIjkLmNoPqRsTuVwXyZ
-
-# 瀏覽器資料存放區 (保留登入資訊)
+```env
+TELEGRAM_TOKEN=你的_Telegram_Bot_Token
+# 你的 Telegram ID (用於權限驗證，可向 @userinfobot 查詢)
+ADMIN_ID=123456789 
+# 指定瀏覽器資料存檔位置 (用於保持登入)
 USER_DATA_DIR=./golem_memory
 
-# (選用) 指定 Chrome 路徑，若不設定則使用 Puppeteer 內建 Chromium
-# CHROME_PATH=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome
-
 ```
 
----
-
-## 🎮 如何使用 (Usage)
-
-### 啟動魔像
+### 5. 啟動 Golem
 
 ```bash
 node index.js
 
 ```
 
-啟動後，終端機顯示 `📡 Golem v3.5 (Fortress Ultimate) 啟動完成` 即代表就緒。
-
-### Telegram 指令
-
-* `/start` - 喚醒機器人並顯示歡迎訊息。
-* `/new` - **重置對話**並初始化 Agent 模式（推薦每次換新任務時使用）。
-
-### Agent 模式範例
-
-Golem 會根據你的自然語言判斷意圖：
-
-1. **寫程式 (沙盒內)**
-> User: "幫我寫一個 Python 的 Hello World 腳本存成 hello.py"
-
-
-> Bot: (跳出黃色按鈕) 🟡 **請求寫入檔案**：`hello.py`
-
-
-> User: [✅ 批准] -> 檔案建立成功。
-
-
-2. **安裝工具 (權限提升)**
-> User: "我需要安裝 ffmpeg 來處理影片"
-
-
-> Bot: (跳出紅色警告) 🔴 **請求系統安裝**：`brew install ffmpeg` (警告：此操作涉及系統變更)
-
-
-> User: [🔥 Root 授權執行] -> 暫時跳出沙盒，執行安裝，完成後收回權限。
-
-
+> **⚠️ 首次執行注意**：預設會開啟 Chrome 視窗 (`headless: false`)。請手動登入您的 Google 帳號。登入後，未來的 session 會自動儲存在 `USER_DATA_DIR` 中。
 
 ---
 
-## 📂 目錄結構
+## 📂 專案結構
 
-```text
+```
 project-golem/
-├── index.js              # 核心主程式 (Bot + Puppeteer + Security)
-├── .env                  # 設定檔
-├── golem_workspace/      # 📦 安全沙盒 (所有 AI 的檔案操作都在這)
-├── golem_memory/         # 瀏覽器快取 (保存 Gemini 登入狀態)
-└── debug_screenshots/    # 錯誤截圖 (Debug 用)
+├── index.js          # 核心主程式 (Monolith)
+├── golem_memory/     # Chrome User Data (已在 .gitignore 中排除)
+├── .env              # 設定檔 (已在 .gitignore 中排除)
+└── README.md         # 說明文件
 
 ```
 
@@ -159,20 +132,10 @@ project-golem/
 
 ## ⚠️ 免責聲明 (Disclaimer)
 
-1. **Google 帳號風險**：本專案使用自動化工具操作 Google 服務，可能違反 Google 服務條款。建議使用**備用 Google 帳號**進行測試，以免主帳號被封鎖。
-2. **系統安全**：雖然 v3.5 具備沙盒與權限審核機制，但在授予「Root 授權」時請務必自行判斷指令風險。作者不對因使用本軟體造成的任何數據丟失或系統損壞負責。
+本專案賦予 AI **直接執行 Shell 指令** 的權限。雖然 v6.0 包含了嚴格的安全審計機制，但開發者不對因使用本軟體而導致的任何資料遺失、系統損壞或安全漏洞負責。
 
----
+**請勿將 USER_DATA_DIR 或 .env 上傳至公開倉庫。**
 
-## 🤝 貢獻 (Contributing)
-
-歡迎提交 Issue 或 Pull Request！
-特別徵求：
-
-* 更多的 Prompt Injection 防禦策略。
-* 支援 Docker 部署的配置優化。
-
----
 
 Created with ❤️ by **Arvin_Chen** 
 
