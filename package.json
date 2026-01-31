@@ -1,37 +1,31 @@
 {
-  "name": "project-golem",
-  "version": "6.0.0",
-  "description": "Project Golem v6.0 (Fortress Edition): A Dual-Brain AI Agent (Gemini Web + Ollama) with Split-Protocol and Risk-Based Security.",
+  "name": "golem-v7-ultimate",
+  "version": "7.1.0",
+  "description": "Golem v7.1: Tri-Brain Architecture (Node.js + Web Gemini + API Doctor)",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Arvincreator/project-golem.git"
+    "start": "node index.js",
+    "test": "GOLEM_TEST_MODE=true node index.js"
   },
   "keywords": [
-    "ai-agent",
-    "dual-brain",
-    "puppeteer",
-    "ollama",
-    "gemini",
     "telegram-bot",
-    "automation",
-    "stealth"
+    "gemini",
+    "puppeteer",
+    "ai-agent",
+    "self-healing"
   ],
-  "author": "Arvincreator",
-  "license": "MIT",
+  "author": "Golem Architect",
+  "license": "ISC",
   "dependencies": {
-    "dotenv": "^16.3.1",
+    "@google/generative-ai": "^0.2.1",
+    "dotenv": "^16.4.1",
     "node-telegram-bot-api": "^0.64.0",
-    "ollama": "^0.5.0",
-    "puppeteer": "^21.5.2",
+    "puppeteer": "^22.0.0",
     "puppeteer-extra": "^3.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2",
     "uuid": "^9.0.1"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=18.0.0"
   }
 }
