@@ -15,7 +15,7 @@ const { v4: uuidv4 } = require('uuid');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const skills = require('./skill'); // 引入技能與人格
+const skills = require('./skills'); // 引入技能與人格
 
 // --- ⚙️ 全域配置 ---
 const CONFIG = {
