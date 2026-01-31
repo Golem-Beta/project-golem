@@ -13,7 +13,7 @@ Headless browser agent powered by Gemini &amp; Ollama.
 
 **Project Golem** 是一個基於 **雙腦架構 (Dual-Brain Architecture)** 的本機自動化 Agent。它利用 **Google Gemini** 的強大認知能力作為「大腦」，配合 **Ollama (Local LLM)** 作為「小腦」進行精準的指令拆解，並透過 **Telegram** 介面安全地控制您的電腦。
 
-v6.1 版本引入了 **Fortress Security Protocol** 與 **Modular Skills System**，具備指令風險分級、審核機制以及可擴充的技能書，確保 AI 在強大的同時絕對安全。
+v6.2 版本引入了 **Fortress Security Protocol** 與 **Modular Skills System**，具備指令風險分級、審核機制以及可擴充的技能書，確保 AI 在強大的同時絕對安全。
 
 ---
 
