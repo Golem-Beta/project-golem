@@ -1,12 +1,12 @@
 /**
- * 🦞 Project Golem v7.5 (Natural Life) - Enhanced Edition
+ * 🦞 Project Golem v7.5 (Natural Life) - OTA Edition
  * ---------------------------------------------------
  * 架構：[Universal Context] -> [Node.js 反射層] <==> [Web Gemini 主大腦]
  * 特性：
  * 1. 🐍 Hydra Link: 同時支援 Telegram 與 Discord 雙平台 (Dual-Stack)。
  * 2. 🧠 Tri-Brain: 結合反射神經 (Node)、無限大腦 (Web Gemini)、精準技師 (API)。
  * 3. 🛡️ High Availability: 實作 DOM Doctor 自癒與 KeyChain 輪動。
- * 4. 📝 Smart-Splitter: 針對不同平台自動適配訊息切割。
+ * 4. ☁️ OTA Upgrader: 支援 `/update` 指令，自動從 GitHub 拉取最新代碼並熱重啟。
  * 5. 🔒 Kernel Guard: 核心邏輯 (Introspection, PatchManager, Security) 鎖定保護。
  * 6. 👁️ Agentic Grazer: 利用 LLM 自主聯網搜尋新聞/趣聞，具備情緒與觀點分享能力。
  * 7. 🔄 Sensory Feedback: 實作「觀察-思考-行動」閉環，Node.js 執行結果回饋給大腦統一發言。
@@ -32,7 +32,9 @@ const CONFIG = {
     USER_DATA_DIR: process.env.USER_DATA_DIR || './golem_memory',
     API_KEYS: (process.env.GEMINI_API_KEYS || '').split(',').map(k => k.trim()).filter(k => k),
     SPLIT_TOKEN: '---GOLEM_ACTION_PLAN---',
-    ADMIN_IDS: [process.env.ADMIN_ID, process.env.DISCORD_ADMIN_ID].filter(k => k).map(String)
+    ADMIN_IDS: [process.env.ADMIN_ID, process.env.DISCORD_ADMIN_ID].filter(k => k).map(String),
+    // ✨ [OTA 設定] 你的 GitHub Raw 來源
+    GITHUB_REPO: process.env.GITHUB_REPO || 'https://raw.githubusercontent.com/Arvincreator/project-golem/main/'
 };
 
 // --- 初始化組件 ---
@@ -88,11 +90,21 @@ class UniversalContext {
     }
 
     async sendDocument(filePath) {
-        if (this.platform === 'telegram') {
-            await this.instance.sendDocument(this.chatId, filePath);
-        } else {
-            const channel = await this.instance.channels.fetch(this.chatId);
-            await channel.send({ files: [filePath] });
+        try {
+            if (this.platform === 'telegram') {
+                await this.instance.sendDocument(this.chatId, filePath);
+            } else {
+                const channel = await this.instance.channels.fetch(this.chatId);
+                await channel.send({ files: [filePath] });
+            }
+        } catch (e) {
+            // Discord 檔案大小限制保護
+            if (e.message.includes('Request entity too large')) {
+                await this.reply(`⚠️ 檔案過大，無法上傳 (Discord 限制 25MB)。\n路徑：\`${filePath}\``);
+            } else {
+                console.error(`[Context] 傳送檔案失敗: ${e.message}`);
+                await this.reply(`❌ 傳送失敗: ${e.message}`);
+            }
         }
     }
 
@@ -274,7 +286,7 @@ class HelpManager {
     static getManual() {
         const source = Introspection.readSelf();
         const routerPattern = /text\.(?:startsWith|match)\(['"]\/?([a-zA-Z0-9_|]+)['"]\)/g;
-        const foundCmds = new Set(['help', 'callme', 'patch']);
+        const foundCmds = new Set(['help', 'callme', 'patch', 'update']);
         let match;
         while ((match = routerPattern.exec(source)) !== null) {
             foundCmds.add(match[1].replace(/\|/g, '/').replace(/[\^\(\)]/g, ''));
@@ -283,13 +295,14 @@ class HelpManager {
         try { skillList = Object.keys(skills).filter(k => k !== 'persona' && k !== 'getSystemPrompt').join(', '); } catch (e) { }
 
         return `
-🤖 **Golem v7.5 (Natural Life) 狀態報告**
+🤖 **Golem v7.5 (Natural Life) - OTA Edition**
 ---------------------------
 ⚡ **Node.js 反射層**: 雙核心運作中
 🧠 **Web Gemini 大腦**: 線上 (Infinite Context)
 📡 **連線狀態**:
 • Telegram: ${CONFIG.TG_TOKEN ? '✅ 線上' : '⚪ 未啟用'}
 • Discord: ${CONFIG.DC_TOKEN ? '✅ 線上' : '⚪ 未啟用'}
+☁️ **更新來源**: GitHub (Arvincreator)
 
 🛠️ **可用指令:**
 ${Array.from(foundCmds).map(c => `• \`/${c}\``).join('\n')}
@@ -405,12 +418,92 @@ class ResponseParser {
 }
 
 // ============================================================
+// ☁️ System Upgrader (OTA 空中升級)
+// ============================================================
+class SystemUpgrader {
+    static async performUpdate(ctx) {
+        if (!CONFIG.GITHUB_REPO) return ctx.reply("❌ 未設定 GitHub Repo 來源，無法更新。");
+
+        await ctx.reply("☁️ 連線至 GitHub 母體，開始下載最新核心...");
+        await ctx.sendTyping();
+
+        const filesToUpdate = ['index.js', 'skills.js'];
+        const downloadedFiles = [];
+
+        try {
+            // 1. 下載並檢疫
+            for (const file of filesToUpdate) {
+                const url = `${CONFIG.GITHUB_REPO}${file}?t=${Date.now()}`;
+                const tempPath = path.join(process.cwd(), `${file}.new`);
+                
+                console.log(`📥 Downloading ${file} from ${url}...`);
+                const response = await fetch(url);
+                
+                if (!response.ok) throw new Error(`無法下載 ${file} (Status: ${response.status})`);
+                
+                const code = await response.text();
+                fs.writeFileSync(tempPath, code);
+                downloadedFiles.push({ file, tempPath });
+            }
+
+            // 2. 安全驗證
+            await ctx.reply("🛡️ 下載完成，正在進行語法完整性掃描...");
+            for (const item of downloadedFiles) {
+                const isValid = PatchManager.verify(item.tempPath);
+                if (!isValid) throw new Error(`檔案 ${item.file} 驗證失敗，更新已終止以保護系統。`);
+            }
+
+            // 3. 備份與覆蓋
+            await ctx.reply("✅ 驗證通過。正在寫入系統...");
+            for (const item of downloadedFiles) {
+                const targetPath = path.join(process.cwd(), item.file);
+                if (fs.existsSync(targetPath)) {
+                    fs.copyFileSync(targetPath, `${targetPath}.bak`);
+                }
+                fs.renameSync(item.tempPath, targetPath);
+            }
+
+            // 4. 重啟
+            await ctx.reply("🚀 系統更新成功！Golem 正在重啟以套用新靈魂...");
+            const subprocess = spawn(process.argv[0], process.argv.slice(1), { 
+                detached: true, 
+                stdio: 'ignore',
+                cwd: process.cwd() 
+            });
+            subprocess.unref();
+            process.exit(0);
+
+        } catch (e) {
+            console.error(e);
+            downloadedFiles.forEach(item => {
+                if (fs.existsSync(item.tempPath)) fs.unlinkSync(item.tempPath);
+            });
+            await ctx.reply(`❌ 更新失敗：${e.message}\n系統已回滾至安全狀態。`);
+        }
+    }
+}
+
+// ============================================================
 // ⚡ NodeRouter (反射層)
 // ============================================================
 class NodeRouter {
     static async handle(ctx, brain) {
         const text = ctx.text ? ctx.text.trim() : "";
         if (text.match(/^\/(help|menu|指令|功能)/)) { await ctx.reply(HelpManager.getManual(), { parse_mode: 'Markdown' }); return true; }
+        
+        // OTA 更新入口
+        if (text === '/update' || text === '/reset' || text === '系統更新') {
+            await ctx.reply("⚠️ **系統更新警告**\n這將從 GitHub 強制覆蓋本地代碼。\n請確認您的 GitHub 上的程式碼是可運行的。", {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🔥 確認更新', callback_data: 'SYSTEM_FORCE_UPDATE' },
+                        { text: '❌ 取消', callback_data: 'SYSTEM_UPDATE_CANCEL' }
+                    ]]
+                }
+            });
+            return true;
+        }
+
         if (text.startsWith('/callme')) {
             const newName = text.replace('/callme', '').trim();
             if (newName) {
@@ -434,10 +527,8 @@ class TaskController {
         this.security = new SecurityManager();
     }
 
-    // 核心修改：執行後回傳 Observation Report，不直接回覆用戶
     async runSequence(ctx, steps, startIndex = 0) {
         let reportBuffer = [];
-
         for (let i = startIndex; i < steps.length; i++) {
             const step = steps[i];
             const risk = this.security.assess(step.cmd);
@@ -457,21 +548,17 @@ class TaskController {
                         ]]
                     }
                 });
-                return null; // 中斷並等待，回傳 null 代表無報告
+                return null; 
             }
 
             try {
                 if (!this.internalExecutor) this.internalExecutor = new Executor();
-                // 靜默執行
                 const output = await this.internalExecutor.run(step.cmd);
-                // 記錄成功報告
                 reportBuffer.push(`[Step ${i + 1} Success] cmd: ${step.cmd}\nResult/Output:\n${output.trim() || "(No stdout)"}`);
             } catch (err) {
-                // 記錄失敗報告 (不 Crash，讓 AI 解釋錯誤)
                 reportBuffer.push(`[Step ${i + 1} Failed] cmd: ${step.cmd}\nError:\n${err.message}`);
             }
         }
-        // 回傳完整觀察報告給大腦
         return reportBuffer.join('\n\n----------------\n\n');
     }
 }
@@ -489,7 +576,7 @@ class Executor {
 }
 
 // ============================================================
-// 🕰️ Autonomy Manager (自主進化 & Agentic News) [✨ v7.5]
+// 🕰️ Autonomy Manager (自主進化 & Agentic News)
 // ============================================================
 class AutonomyManager {
     constructor(brain) { this.brain = brain; }
@@ -529,7 +616,6 @@ class AutonomyManager {
         } catch (e) { console.error("自由意志執行失敗 (已靜默):", e.message); }
     }
 
-    // ✨ 核心升級：Agentic News Chat (讓 Gemini 聯網)
     async performNewsChat() {
         try {
             const now = new Date();
@@ -548,8 +634,6 @@ class AutonomyManager {
 1. 請啟動你的 **Google Search 聯網功能**，去網路上看看「${randomTopic}」。
 2. 挑選 **一件** 你覺得最值得跟主人 (${skills.persona.get().userName}) 分享的事情。
 3. **不要** 只是摘要新聞。我希望看到你的「情緒」和「個人看法」。
-   - 如果好笑，就表現得很開心。
-   - 如果是悲傷的新聞，可以表達遺憾。
 4. 像朋友一樣直接開啟話題。例如：「欸！你有看到今天那個新聞嗎？我覺得...」
 5. **嚴禁** 使用「根據搜尋結果」或「新聞摘要」這種機器人開場白。
 
@@ -622,11 +706,11 @@ const autonomy = new AutonomyManager(brain);
 (async () => {
     await brain.init();
     autonomy.start();
-    console.log('📡 Golem v7.5 (Natural Life) is Online.');
+    console.log('📡 Golem v7.5 (Natural Life) - OTA Edition is Online.');
     if (dcClient) dcClient.login(CONFIG.DC_TOKEN);
 })();
 
-// --- 統一事件處理 (核心：閉環回饋) ---
+// --- 統一事件處理 ---
 async function handleUnifiedMessage(ctx) {
     if (!ctx.text) return;
     if (!ctx.isAdmin) return;
@@ -663,7 +747,7 @@ async function handleUnifiedMessage(ctx) {
         return;
     }
 
-    // [Round 1]
+    // [Round 1: 接收指令]
     await ctx.sendTyping();
     try {
         const raw = await brain.sendMessage(ctx.text);
@@ -673,10 +757,10 @@ async function handleUnifiedMessage(ctx) {
         if (chatPart && steps.length > 0) await ctx.reply(chatPart);
 
         if (steps.length > 0) {
-            // [Action] 靜默執行，獲取觀察報告
+            // [Action: 靜默執行]
             const observation = await controller.runSequence(ctx, steps);
 
-            // [Round 2: Sensory Feedback Loop]
+            // [Round 2: 感知回饋 (Observation Loop)]
             if (observation) {
                 await ctx.sendTyping();
                 const feedbackPrompt = `
@@ -698,11 +782,22 @@ ${observation}
     } catch (e) { console.error(e); await ctx.reply(`❌ 錯誤: ${e.message}`); }
 }
 
-// --- 統一 Callback 處理 (含 Approved 任務的回饋閉環) ---
+// --- 統一 Callback 處理 ---
 async function handleUnifiedCallback(ctx, actionData) {
     if (!ctx.isAdmin) return;
     if (actionData === 'PATCH_DEPLOY') return executeDeploy(ctx);
     if (actionData === 'PATCH_DROP') return executeDrop(ctx);
+    
+    // OTA 按鈕處理
+    if (actionData === 'SYSTEM_FORCE_UPDATE') {
+        try {
+            if (ctx.platform === 'telegram') await ctx.instance.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: ctx.chatId, message_id: ctx.event.message.message_id });
+            else await ctx.event.update({ components: [] });
+        } catch(e) {}
+        return SystemUpgrader.performUpdate(ctx);
+    }
+    if (actionData === 'SYSTEM_UPDATE_CANCEL') return ctx.reply("已取消更新操作。");
+
     if (actionData.includes(':')) {
         const [action, taskId] = actionData.split(':');
         const task = pendingTasks.get(taskId);
@@ -720,7 +815,6 @@ async function handleUnifiedCallback(ctx, actionData) {
             await ctx.reply("✅ 授權通過，執行中...");
             await ctx.sendTyping();
             
-            // 執行剩餘步驟並進入回饋迴路
             const observation = await controller.runSequence(ctx, steps, nextIndex);
             if (observation) {
                 const feedbackPrompt = `[System Observation Report - Approved Actions]\nUser approved high-risk actions. Result:\n${observation}\n\nReport this to the user naturally.`;
