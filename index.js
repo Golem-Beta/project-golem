@@ -194,12 +194,13 @@ const memory = new ExperienceMemory();
 // ============================================================
 // 🪞 Introspection (內省模組) [✨ v7.2 升級 - 多檔案視野]
 // ============================================================
+// ==================== [KERNEL PROTECTED START] ====================
 class Introspection {
   static readSelf() {
     try {
       let main = fs.readFileSync(__filename, 'utf-8');
       main = main.replace(/TOKEN: .*,/, 'TOKEN: "HIDDEN",').replace(/API_KEYS: .*,/, 'API_KEYS: "HIDDEN",');
-      
+
       let skills = "";
       try { skills = fs.readFileSync(path.join(process.cwd(), 'skills.js'), 'utf-8'); } catch(e) {}
 
@@ -207,12 +208,26 @@ class Introspection {
     } catch (e) { return `無法讀取自身代碼: ${e.message}`; }
   }
 }
+// ==================== [KERNEL PROTECTED END] ====================
 
 // ============================================================
 // 🩹 Patch Manager (神經補丁) [🔒 保留]
 // ============================================================
+// ==================== [KERNEL PROTECTED START] ====================
 class PatchManager {
   static apply(originalCode, patch) {
+    // 🛡️ 禁區檢測：防止 AI 修改被保護的核心區域
+    const protectedPattern = /\/\/ =+ \[KERNEL PROTECTED START\] =+([\s\S]*?)\/\/ =+ \[KERNEL PROTECTED END\] =+/g;
+    let match;
+    while ((match = protectedPattern.exec(originalCode)) !== null) {
+        const protectedContent = match[1];
+        // 簡單包含檢查：如果 Patch 搜尋的目標字串存在於禁區內，則攔截
+        if (protectedContent.includes(patch.search)) {
+            throw new Error(`⛔ 權限拒絕：試圖修改系統核心禁區 (Kernel Protected Region)。`);
+        }
+    }
+
+    // 正常套用邏輯
     if (originalCode.includes(patch.search)) return originalCode.replace(patch.search, patch.replace);
     try {
       const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -231,12 +246,12 @@ class PatchManager {
       let patchedCode = originalCode;
       const patches = Array.isArray(patchContent) ? patchContent : [patchContent];
       patches.forEach(p => { patchedCode = this.apply(patchedCode, p); });
-      
+
       // 動態決定測試檔名，避免混淆
       const ext = path.extname(originalPath);
       const name = path.basename(originalPath, ext);
       const testFile = `${name}.test${ext}`;
-      
+
       fs.writeFileSync(testFile, patchedCode, 'utf-8');
       return testFile;
     } catch (e) { throw new Error(`補丁應用失敗: ${e.message}`); }
@@ -256,10 +271,12 @@ class PatchManager {
     }
   }
 }
+// ==================== [KERNEL PROTECTED END] ====================
 
 // ============================================================
 // 🛡️ Security Manager (安全審計) [🔒 保留]
 // ============================================================
+// ==================== [KERNEL PROTECTED START] ====================
 class SecurityManager {
   constructor() {
     this.SAFE_COMMANDS = ['ls', 'dir', 'pwd', 'date', 'echo', 'cat', 'grep', 'find', 'whoami', 'tail', 'head', 'df', 'free', 'Get-ChildItem', 'Select-String'];
@@ -274,6 +291,7 @@ class SecurityManager {
     return { level: 'WARNING', reason: '需確認' };
   }
 }
+// ==================== [KERNEL PROTECTED END] ====================
 
 // ============================================================
 // 📖 Help Manager (動態說明書) [🔒 保留]
@@ -674,11 +692,11 @@ async function handleUnifiedMessage(ctx) {
 
     if (patches.length > 0) {
       const patch = patches[0];
-      
+
       const targetName = patch.file === 'skills.js' ? 'skills.js' : 'index.js';
       const targetPath = targetName === 'skills.js' ? path.join(process.cwd(), 'skills.js') : __filename;
       const testFile = PatchManager.createTestClone(targetPath, patches);
-      
+
       let isVerified = false;
       if (targetName === 'skills.js') {
           try { require(path.resolve(testFile)); isVerified = true; } catch(e) { console.error(e); }
@@ -750,20 +768,20 @@ async function executeDeploy(ctx) {
   if (!global.pendingPatch) return;
   try {
     const { path: patchPath, target: targetPath, name: targetName } = global.pendingPatch;
-    
+
     // 備份
     fs.copyFileSync(targetPath, `${targetName}.bak-${Date.now()}`);
-    
+
     // 覆寫
     fs.writeFileSync(targetPath, fs.readFileSync(patchPath));
-    
+
     // 清理
     fs.unlinkSync(patchPath);
     global.pendingPatch = null;
     memory.recordSuccess();
-    
+
     await ctx.reply(`🚀 ${targetName} 升級成功！正在重啟...`);
-    
+
     // 重啟
     const subprocess = spawn(process.argv[0], process.argv.slice(1), { detached: true, stdio: 'ignore' });
     subprocess.unref();
