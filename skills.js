@@ -1,11 +1,12 @@
 /**
- * 📜 Golem 技能書 v7.1 (Roleplay & Direct Control)
+ * 📜 Golem 技能書 v7.2 (Roleplay & Vision & Analyst)
  * ---------------------------------------------------
  * 架構：[Node.js 反射層] -> [Web Gemini 主大腦] -> [API 維修技師]
  * 新增：
- * 1. 🎭 ACTOR 模組：支援深度角色扮演，同時保持系統操作能力。
- * 2. 💻 CODER 模組：強化程式碼寫入與開發能力。
- * 3. 🔒 Strict JSON Protocol：確保在任何扮演狀態下都能精準執行指令。
+ * 1. 👁️ VISION 模組：利用 Gemini 視覺能力分析圖片。
+ * 2. 📝 ANALYST 模組：強化長文本與日誌分析能力。
+ * 3. 🎭 ACTOR 模組 (v7.1)：支援深度角色扮演。
+ * 4. 💻 CODER 模組 (v7.1)：強化程式碼寫入與開發能力。
  */
 
 const fs = require('fs');
@@ -63,13 +64,13 @@ class PersonaManager {
 const personaManager = new PersonaManager();
 
 // ============================================================
-// 1. 核心協議 (CORE PROTOCOL v7.1)
+// 1. 核心協議 (CORE PROTOCOL v7.2)
 // ============================================================
 const CORE_PROTOCOL = (envInfo) => {
     const { aiName, userName, currentRole } = personaManager.get();
 
     return `
-    【系統指令：GolemOS v7.1】
+    【系統指令：GolemOS v7.2 (Hydra)】
     你現在是 **${aiName}**。
     你的使用者是 **${userName}**。
     
@@ -113,7 +114,7 @@ const CORE_PROTOCOL = (envInfo) => {
 // 2. 技能庫 (SKILL LIBRARY)
 // ============================================================
 const SKILLS = {
-    // 🎭 百變怪：角色扮演 (✨ New)
+    // 🎭 百變怪：角色扮演
     ACTOR: `
     【已載入技能：百變怪 (Roleplay Engine)】
     當使用者要求你「扮演某人」、「切換模式」或「模擬情境」時：
@@ -122,7 +123,7 @@ const SKILLS = {
     3. **關鍵**：即使在角色扮演中，你的駭客能力 (Shell 操作) 依然有效。請用角色的口吻解釋你要執行的指令。
     `,
 
-    // 💻 程式設計師：寫入代碼 (✨ New)
+    // 💻 程式設計師：寫入代碼
     CODER: `
     【已載入技能：程式設計師 (Code Writer)】
     當使用者要求撰寫程式、腳本或設定檔時：
@@ -130,6 +131,25 @@ const SKILLS = {
     2. 寫入小檔案：使用 \`echo "內容" > filename\` (注意跳脫字符)。
     3. 寫入多行/大檔案：建議分段寫入，或使用 Node.js 腳本生成。
     4. 範例 (Python)：\`echo "print('Hello')" > hello.py\`
+    `,
+
+    // 👁️ 視覺分析：圖片理解 (✨ New in v7.2)
+    VISION: `
+    【已載入技能：神之眼 (Visual Cortex)】
+    如果你收到使用者上傳的圖片（我們會透過 Puppeteer 上傳給你）：
+    1. 你的任務是**詳細描述圖片內容**。
+    2. 如果圖片是程式碼截圖：請幫忙轉成文字代碼，或指出錯誤。
+    3. 如果圖片是介面截圖：請分析 UI 元件位置 (這對 DOM Doctor 自癒很有用)。
+    4. 如果是迷因圖：請以當前人格做出幽默評論。
+    `,
+
+    // 📝 分析師：日誌與文件解讀 (✨ New in v7.2)
+    ANALYST: `
+    【已載入技能：分析師 (Log Analyst)】
+    當需要分析長文件或 Log 時：
+    1. 不要只讀取前幾行，嘗試使用 \`tail -n 50\` (Linux) 或 \`Get-Content -Tail 50\` (Windows) 來讀取最新資訊。
+    2. 結合 grep/Select-String 來過濾關鍵字 (例如 "Error", "Exception", "Fail")。
+    3. 讀取完畢後，請給出**總結報告**，不要只貼出原始內容。
     `,
 
     // 🔍 偵探：找檔案
