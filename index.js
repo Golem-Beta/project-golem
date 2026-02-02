@@ -5,7 +5,7 @@
  * 特性：
  * 1. 🐍 Hydra Link: 同時支援 Telegram 與 Discord 雙平台 (Dual-Stack)。
  * 2. 🧠 Tri-Brain: 結合反射神經 (Node)、無限大腦 (Web Gemini)、精準技師 (API)。
- * 3. 🛡️ High Availability: 實作 DOM Doctor 自癒與 KeyChain 輪動。
+ * 3. 🛡️ High Availability: 實作 DOM Doctor 自癒 (v2.0 緩存版) 與 KeyChain 輪動。
  * 4. ☁️ OTA Upgrader: 支援 `/update` 指令，自動從 GitHub 拉取最新代碼並熱重啟。
  * 5. 💰 Sponsor Core: 內建贊助連結與 `/donate` 指令，支持創造者。
  * 6. 👁️ Agentic Grazer: 利用 LLM 自主聯網搜尋新聞/趣聞，具備情緒與觀點分享能力。
@@ -269,7 +269,7 @@ class PatchManager {
 class SecurityManager {
     constructor() {
         this.SAFE_COMMANDS = [
-            'ls', 'dir', 'pwd', 'date', 'echo', 'cat', 'grep', 'find', 'whoami', 'tail', 'head', 'df', 'free', 
+            'ls', 'dir', 'pwd', 'date', 'echo', 'cat', 'grep', 'find', 'whoami', 'tail', 'head', 'df', 'free',
             'Get-ChildItem', 'Select-String',
             'golem-check' // ✨ [v7.6] 允許自動探測指令
         ];
@@ -324,6 +324,7 @@ class HelpManager {
 🧠 **Web Gemini 大腦**: 線上 (Infinite Context)
 ⚓ **同步模式**: Anchor Locking (定界符錨點)
 🔍 **工具探測**: Auto-Discovery Active
+🚑 **DOM Doctor**: v2.0 (Cached & Self-Healing)
 📡 **連線狀態**:
 • Telegram: ${CONFIG.TG_TOKEN ? '✅ 線上' : '⚪ 未啟用'}
 • Discord: ${CONFIG.DC_TOKEN ? '✅ 線上' : '⚪ 未啟用'}
@@ -341,7 +342,7 @@ ${CONFIG.DONATE_URL}
 }
 
 // ============================================================
-// 🗝️ KeyChain & 🚑 DOM Doctor
+// 🗝️ KeyChain & 🚑 DOM Doctor (v2.0 Smart Caching)
 // ============================================================
 class KeyChain {
     constructor() {
@@ -358,19 +359,57 @@ class KeyChain {
 }
 
 class DOMDoctor {
-    constructor() { this.keyChain = new KeyChain(); }
+    constructor() {
+        this.keyChain = new KeyChain();
+        this.cacheFile = path.join(process.cwd(), 'golem_selectors.json');
+        this.defaults = {
+            input: 'div[contenteditable="true"], rich-textarea > div',
+            send: 'button[aria-label="Send"], span[data-icon="send"]',
+            response: 'message-content, .model-response-text, .markdown'
+        };
+    }
+
+    // 🧠 載入記憶：優先讀取硬碟快取，若無則使用預設值
+    loadSelectors() {
+        try {
+            if (fs.existsSync(this.cacheFile)) {
+                const cached = JSON.parse(fs.readFileSync(this.cacheFile, 'utf-8'));
+                console.log("🚑 [Doctor] 已載入本地 Selector 快取 (省錢模式 ✅)");
+                return { ...this.defaults, ...cached };
+            }
+        } catch (e) { console.error("快取讀取失敗，使用預設值:", e.message); }
+        return { ...this.defaults };
+    }
+
+    // 💾 寫入記憶：將新發現的有效 Selector 存入硬碟
+    saveSelectors(newSelectors) {
+        try {
+            const current = this.loadSelectors();
+            const updated = { ...current, ...newSelectors };
+            fs.writeFileSync(this.cacheFile, JSON.stringify(updated, null, 2));
+            console.log("💾 [Doctor] Selector 已更新並存檔！");
+        } catch (e) { console.error("快取寫入失敗:", e.message); }
+    }
+
     async diagnose(htmlSnippet, targetDescription) {
         if (this.keyChain.keys.length === 0) return null;
-        console.log(`🚑 [Doctor] 診斷中: "${targetDescription}"...`);
-        const safeHtml = htmlSnippet.length > 20000 ? htmlSnippet.substring(0, 20000) + "..." : htmlSnippet;
+        console.log(`🚑 [Doctor] 啟動深層診斷: "${targetDescription}" (此操作將消耗 API Quota)...`);
+        
+        const safeHtml = htmlSnippet.length > 30000 ? htmlSnippet.substring(0, 30000) + "..." : htmlSnippet;
         const prompt = `你是 Puppeteer 專家。HTML Selector 失效。目標: "${targetDescription}"。HTML: ${safeHtml}。請只回傳一個最佳 CSS Selector。`;
+        
         let attempts = 0;
         while (attempts < this.keyChain.keys.length) {
             try {
                 const genAI = new GoogleGenerativeAI(this.keyChain.getKey());
                 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
                 const result = await model.generateContent(prompt);
-                return result.response.text().trim().replace(/`/g, '');
+                const newSelector = result.response.text().trim().replace(/`/g, '').replace(/^css\s*/, '');
+                
+                if (newSelector.length > 0) {
+                    console.log(`✅ [Doctor] 診斷成功！新 Selector: "${newSelector}"`);
+                    return newSelector;
+                }
             } catch (e) { attempts++; }
         }
         return null;
@@ -378,7 +417,7 @@ class DOMDoctor {
 }
 
 // ============================================================
-// 🧠 Golem Brain (Web Gemini) - Anchor Strategy + Auto Discovery
+// 🧠 Golem Brain (Web Gemini) - Anchor Strategy + Auto Discovery + Self Healing
 // ============================================================
 function getSystemFingerprint() { return `OS: ${os.platform()} | Arch: ${os.arch()} | CWD: ${process.cwd()}`; }
 
@@ -387,12 +426,8 @@ class GolemBrain {
         this.browser = null;
         this.page = null;
         this.doctor = new DOMDoctor();
-        this.selectors = {
-            input: 'div[contenteditable="true"], rich-textarea > div',
-            send: 'button[aria-label="Send"], span[data-icon="send"]',
-            // 使用較寬鬆的選擇器，因為我們現在依賴文字標記
-            response: 'message-content, .model-response-text, .markdown'
-        };
+        // ✨ 修改：不再使用寫死的 selectors，改為動態載入
+        this.selectors = this.doctor.loadSelectors();
     }
     async init(forceReload = false) {
         if (this.browser && !forceReload) return;
@@ -404,68 +439,102 @@ class GolemBrain {
         }
         if (forceReload || !this.page) {
             let systemPrompt = skills.getSystemPrompt(getSystemFingerprint());
-            
+
             // ⚓ [ANCHOR + DISCOVERY INJECTION] 強制注入雙重協定
             const superProtocol = `
-            \n\n【⚠️ 系統通訊協定 - 最高優先級】
-            1. **Anchor Protocol (對話錨點)**: 
-               - 回應開頭必須加上 "—-回覆開始—- " (包含空格)。
-               - 回應結尾必須加上 " —-回覆結束—-" (包含空格)。
-               - 這是為了確保 Node.js 能準確讀取你的回應，請務必遵守。
+\n\n【⚠️ 系統通訊協定 - 最高優先級】
+1. **Anchor Protocol (對話錨點)**:
+- 回應開頭必須加上 "—-回覆開始—- " (包含空格)。
+- 回應結尾必須加上 " —-回覆結束—-" (包含空格)。
+- 這是為了確保 Node.js 能準確讀取你的回應，請務必遵守。
 
-            2. **Auto-Discovery Protocol (工具探測)**:
-               - 當你需要使用外部工具 (如 ffmpeg, python, git, docker 等)，但我不確定電腦是否有安裝時：
-               - 請先生成指令：\`golem-check <工具名>\` (例如 \`golem-check ffmpeg\`)
-               - 等待我回報「已安裝」或「未安裝」。
-               - 若未安裝，請告知我需要安裝該工具。
-               - **不要**自己假設工具存在。
-            `;
-            
+2. **Auto-Discovery Protocol (工具探測)**:
+- 當你需要使用外部工具 (如 ffmpeg, python, git, docker 等)，但我不確定電腦是否有安裝時：
+- 請先生成指令：\`golem-check <工具名>\` (例如 \`golem-check ffmpeg\`)
+- 等待我回報「已安裝」或「未安裝」。
+- 若未安裝，請告知我需要安裝該工具。
+- **不要**自己假設工具存在。
+`;
             await this.sendMessage(systemPrompt + superProtocol, true);
         }
     }
     async sendMessage(text, isSystem = false) {
         if (!this.browser) await this.init();
-        const tryInteract = async (sel) => {
-            const preCount = await this.page.evaluate(s => document.querySelectorAll(s).length, sel.response);
-            await this.page.waitForSelector(sel.input, { timeout: 4000 });
-            await this.page.evaluate((s, t) => { const el = document.querySelector(s); el.focus(); document.execCommand('insertText', false, t); }, sel.input, text);
-            await new Promise(r => setTimeout(r, 800));
-            try { await this.page.waitForSelector(sel.send, { timeout: 2000 }); await this.page.click(sel.send); } catch (e) { await this.page.keyboard.press('Enter'); }
-            
-            if (isSystem) { await new Promise(r => setTimeout(r, 2000)); return ""; }
-            
-            // ⚓ [ANCHOR WATCHER] 視覺鎖定邏輯
-            console.log("⏳ [Brain] 等待定位點 (—-回覆結束—-) ...");
-            
+
+        // 內部函式：互動邏輯 (包含自癒機制)
+        const tryInteract = async (sel, retryCount = 0) => {
             try {
-                // 等待回應氣泡中出現「回覆結束」的標記
+                // 1. 檢查輸入框是否存在 (預判失敗)
+                const inputExists = await this.page.$(sel.input);
+                if (!inputExists) throw new Error(`找不到輸入框: ${sel.input}`);
+
+                const preCount = await this.page.evaluate(s => document.querySelectorAll(s).length, sel.response);
+                
+                // 輸入文字
+                await this.page.evaluate((s, t) => { 
+                    const el = document.querySelector(s); 
+                    el.focus(); 
+                    document.execCommand('insertText', false, t); 
+                }, sel.input, text);
+                
+                await new Promise(r => setTimeout(r, 800));
+
+                // 點擊發送
+                try { 
+                    await this.page.waitForSelector(sel.send, { timeout: 2000 }); 
+                    await this.page.click(sel.send); 
+                } catch (e) { 
+                    await this.page.keyboard.press('Enter'); 
+                }
+
+                if (isSystem) { await new Promise(r => setTimeout(r, 2000)); return ""; }
+
+                // ⏳ 等待回應 (Anchor Logic)
+                console.log("⏳ [Brain] 等待回應...");
                 await this.page.waitForFunction((s, n) => {
                     const bubbles = document.querySelectorAll(s);
-                    if (bubbles.length <= n) return false; // 必須要有新氣泡
-                    const lastBubble = bubbles[bubbles.length - 1];
-                    const text = lastBubble.innerText;
-                    // 只要看到結束標記，就視為成功
-                    return text.includes('—-回覆結束—-');
-                }, { timeout: 180000, polling: 1000 }, sel.response, preCount); // 給予 3 分鐘寬限期
-            } catch (timeoutErr) {
-                console.warn("⚠️ 等待定位點超時，嘗試強制讀取...");
-            }
+                    if (bubbles.length <= n) return false;
+                    const lastText = bubbles[bubbles.length - 1].innerText;
+                    return lastText.includes('—-回覆結束—-'); // 嚴格依賴 Anchor
+                }, { timeout: 120000, polling: 1000 }, sel.response, preCount);
 
-            // ⚓ [ANCHOR PARSER] 剝殼與回傳
-            return await this.page.evaluate((s) => {
-                const bubbles = document.querySelectorAll(s);
-                if (!bubbles.length) return "";
-                let rawText = bubbles[bubbles.length - 1].innerText;
+                // 解析回應
+                return await this.page.evaluate((s) => {
+                    const bubbles = document.querySelectorAll(s);
+                    if (!bubbles.length) return "";
+                    let rawText = bubbles[bubbles.length - 1].innerText;
+                    return rawText.replace('—-回覆開始—-', '').replace('—-回覆結束—-', '').trim();
+                }, sel.response);
+
+            } catch (e) {
+                // 🚑 自癒邏輯 (Self-Healing Trigger)
+                console.warn(`⚠️ [Brain] 操作失敗: ${e.message}`);
                 
-                // 清理標記，還原純淨內容
-                let cleanText = rawText
-                    .replace('—-回覆開始—-', '')
-                    .replace('—-回覆結束—-', '')
-                    .trim();
-                
-                return cleanText || "(⚠️ 內容為空)";
-            }, sel.response);
+                if (retryCount === 0) { // 只允許重試一次，避免無限迴圈
+                    console.log("🚑 [Brain] 呼叫 DOM Doctor 進行緊急手術...");
+                    const htmlDump = await this.page.content();
+                    
+                    // 簡單判斷：如果是輸入框壞了就修輸入框，否則修回覆框
+                    const isInputBroken = e.message.includes('找不到輸入框');
+                    
+                    const newSelector = await this.doctor.diagnose(
+                        htmlDump, 
+                        isInputBroken ? 'Chat Input Box (contenteditable div)' : 'Chat Message Bubble (text content)'
+                    );
+                    
+                    if (newSelector) {
+                        if (isInputBroken) this.selectors.input = newSelector;
+                        else this.selectors.response = newSelector;
+                        
+                        // 存入長期記憶
+                        this.doctor.saveSelectors(this.selectors);
+                        
+                        console.log("🔄 [Brain] 手術完成，正在重試...");
+                        return await tryInteract(this.selectors, retryCount + 1);
+                    }
+                }
+                throw e; // 如果重試也失敗，或者醫生沒救活，就真的拋出錯誤
+            }
         };
 
         try { return await tryInteract(this.selectors); } catch (e) {
@@ -617,7 +686,7 @@ class TaskController {
             if (step.cmd.startsWith('golem-check')) {
                 const toolName = step.cmd.split(' ')[1];
                 if (!toolName) {
-                     reportBuffer.push(`⚠️ [ToolCheck] 缺少參數。用法: golem-check <tool>`);
+                    reportBuffer.push(`⚠️ [ToolCheck] 缺少參數。用法: golem-check <tool>`);
                 } else {
                     const result = ToolScanner.check(toolName);
                     reportBuffer.push(`🔍 [ToolCheck] ${result}`);
