@@ -8,7 +8,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${CYAN}=======================================================${NC}"
-echo -e "${CYAN}  🦞 Golem v7.5 Setup - Pure Installer${NC}"
+echo -e "${CYAN}  🦞 Golem v7.6 Setup - Pure Installer${NC}"
 echo -e "${CYAN}  Target: Linux / macOS${NC}"
 echo -e "${CYAN}  注意：本腳本僅安裝環境，請確保您已放入原始碼！${NC}"
 echo -e "${CYAN}=======================================================${NC}"
@@ -87,7 +87,7 @@ fi
 
 # 建立 .env (若不存在)
 if [ ! -f ".env" ]; then
-    echo "   - Creating v7.5 .env template..."
+    echo "   - Creating v7.6 .env template..."
     cat <<EOT >> .env
 # ======================================================
 # 🧠 Golem Brain (Web Gemini API Keys)
