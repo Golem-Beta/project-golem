@@ -46,18 +46,44 @@ const https = require('https');
 const skills = require('./skills');
 
 // --- ⚙️ 全域配置 ---
+const cleanEnv = (str, allowSpaces = false) => {
+    if (!str) return "";
+    // 只保留可列印的 ASCII 字元 (32-126)
+    let cleaned = str.replace(/[^\x20-\x7E]/g, "");
+    if (!allowSpaces) cleaned = cleaned.replace(/\s/g, "");
+    return cleaned.trim();
+};
+
+const isPlaceholder = (str) => {
+    if (!str) return true;
+    return /你的|這裡|YOUR_|TOKEN/i.test(str) || str.length < 10;
+};
+
 const CONFIG = {
-    TG_TOKEN: process.env.TELEGRAM_TOKEN,
-    DC_TOKEN: process.env.DISCORD_TOKEN,
-    USER_DATA_DIR: process.env.USER_DATA_DIR || './golem_memory',
-    API_KEYS: (process.env.GEMINI_API_KEYS || '').split(',').map(k => k.trim()).filter(k => k),
+    TG_TOKEN: cleanEnv(process.env.TELEGRAM_TOKEN),
+    DC_TOKEN: cleanEnv(process.env.DISCORD_TOKEN),
+    USER_DATA_DIR: cleanEnv(process.env.USER_DATA_DIR || './golem_memory', true),
+    API_KEYS: (process.env.GEMINI_API_KEYS || '').split(',').map(k => cleanEnv(k)).filter(k => k),
     SPLIT_TOKEN: '---GOLEM_ACTION_PLAN---',
-    ADMIN_IDS: [process.env.ADMIN_ID, process.env.DISCORD_ADMIN_ID].filter(k => k).map(String),
+    ADMIN_ID: cleanEnv(process.env.ADMIN_ID),
+    DISCORD_ADMIN_ID: cleanEnv(process.env.DISCORD_ADMIN_ID),
+    ADMIN_IDS: [process.env.ADMIN_ID, process.env.DISCORD_ADMIN_ID]
+        .map(k => cleanEnv(k))
+        .filter(k => k),
     // OTA 設定
-    GITHUB_REPO: process.env.GITHUB_REPO || 'https://raw.githubusercontent.com/Arvincreator/project-golem/main/',
+    GITHUB_REPO: cleanEnv(process.env.GITHUB_REPO || 'https://raw.githubusercontent.com/Arvincreator/project-golem/main/', true),
+    QMD_PATH: cleanEnv(process.env.GOLEM_QMD_PATH || 'qmd', true),
     // ✨ [贊助 設定] 您的 BuyMeACoffee 連結
     DONATE_URL: 'https://buymeacoffee.com/arvincreator'
 };
+
+// 驗證關鍵 Token
+if (isPlaceholder(CONFIG.TG_TOKEN)) { console.warn("⚠️ [Config] TELEGRAM_TOKEN 看起來是預設值或無效，TG Bot 將不啟動。"); CONFIG.TG_TOKEN = ""; }
+if (isPlaceholder(CONFIG.DC_TOKEN)) { console.warn("⚠️ [Config] DISCORD_TOKEN 看起來是預設值或無效，Discord Bot 將不啟動。"); CONFIG.DC_TOKEN = ""; }
+if (CONFIG.API_KEYS.some(isPlaceholder)) {
+    console.warn("⚠️ [Config] 偵測到部分 API_KEYS 為無效預設值，已自動過濾。");
+    CONFIG.API_KEYS = CONFIG.API_KEYS.filter(k => !isPlaceholder(k));
+}
 
 // --- 初始化組件 ---
 puppeteer.use(StealthPlugin());
@@ -270,7 +296,7 @@ class ExperienceMemory {
         this.data = this._load();
     }
     _load() {
-        try { if (fs.existsSync(this.memoryFile)) return JSON.parse(fs.readFileSync(this.memoryFile, 'utf-8')); } catch (e) {}
+        try { if (fs.existsSync(this.memoryFile)) return JSON.parse(fs.readFileSync(this.memoryFile, 'utf-8')); } catch (e) { }
         return { lastProposalType: null, rejectedCount: 0, avoidList: [], nextWakeup: 0 };
     }
     save() { fs.writeFileSync(this.memoryFile, JSON.stringify(this.data, null, 2)); }
@@ -302,7 +328,7 @@ class Introspection {
             let main = fs.readFileSync(__filename, 'utf-8');
             main = main.replace(/TOKEN: .*,/, 'TOKEN: "HIDDEN",').replace(/API_KEYS: .*,/, 'API_KEYS: "HIDDEN",');
             let skills = "";
-            try { skills = fs.readFileSync(path.join(process.cwd(), 'skills.js'), 'utf-8'); } catch(e) {}
+            try { skills = fs.readFileSync(path.join(process.cwd(), 'skills.js'), 'utf-8'); } catch (e) { }
             return `=== index.js ===\n${main}\n\n=== skills.js ===\n${skills}`;
         } catch (e) { return `無法讀取自身代碼: ${e.message}`; }
     }
@@ -421,7 +447,7 @@ class HelpManager {
 ---------------------------
 ⚡ **Node.js**: Reflex Layer + Action Executor
 🧠 **Web Gemini**: Infinite Context Brain
-🌗 **Dual-Memory**: ${process.env.GOLEM_MEMORY_MODE || 'browser'} mode
+🌗 **Dual-Memory**: ${cleanEnv(process.env.GOLEM_MEMORY_MODE || 'browser')} mode
 ⚓ **Sync Mode**: Tri-Stream Protocol (Memory/Action/Reply)
 🔍 **Auto-Discovery**: Active
 🚑 **DOM Doctor**: v2.0 (Self-Healing)
@@ -555,76 +581,135 @@ class SystemQmdDriver {
     constructor() {
         this.baseDir = path.join(process.cwd(), 'golem_memory', 'knowledge');
         if (!fs.existsSync(this.baseDir)) fs.mkdirSync(this.baseDir, { recursive: true });
+        this.qmdCmd = 'qmd'; // 預設
     }
 
     async init() {
+        console.log("🔍 [Memory:Qmd] 啟動引擎探測...");
         try {
-            // 檢查 qmd 是否安裝
-            execSync('qmd --version', { stdio: 'ignore' });
-            console.log("🧠 [Memory:Qmd] 系統核心已連線 (High-Performance Mode)");
-            
-            // 嘗試初始化 Collection (若已存在會報錯，忽略即可)
+            const checkCmd = (c) => {
+                try {
+                    const findCmd = os.platform() === 'win32' ? `where ${c}` : `command -v ${c}`;
+                    execSync(findCmd, { stdio: 'ignore', env: process.env });
+                    return true;
+                } catch (e) { return false; }
+            };
+
+            // 1. 優先查看是否有手動指定路徑
+            if (CONFIG.QMD_PATH !== 'qmd' && fs.existsSync(CONFIG.QMD_PATH)) {
+                this.qmdCmd = `"${CONFIG.QMD_PATH}"`;
+            }
+            // 2. 嘗試直接執行 qmd
+            else if (checkCmd('qmd')) {
+                this.qmdCmd = 'qmd';
+            }
+            // 3. 嘗試常見的絕對路徑
+            else {
+                const homeQmd = path.join(os.homedir(), '.bun', 'bin', 'qmd');
+                if (fs.existsSync(homeQmd)) {
+                    this.qmdCmd = `"${homeQmd}"`;
+                } else if (os.platform() !== 'win32') {
+                    // 4. 最後一搏：嘗試透過 bash 登入檔尋找
+                    try {
+                        const bashFound = execSync('bash -lc "which qmd"', { encoding: 'utf8', env: process.env }).trim();
+                        if (bashFound) this.qmdCmd = `"${bashFound}"`;
+                        else throw new Error();
+                    } catch (e) { throw new Error("QMD_NOT_FOUND"); }
+                } else {
+                    throw new Error("QMD_NOT_FOUND");
+                }
+            }
+
+            console.log(`🧠 [Memory:Qmd] 引擎連線成功: ${this.qmdCmd}`);
+
+            // 嘗試初始化 Collection
             try {
-                // 使用 JSON 格式路徑避免 Windows 斜線問題
                 const target = path.join(this.baseDir, '*.md');
-                execSync(`qmd collection add "${target}" --name golem-core`, { stdio: 'ignore' });
-            } catch (e) {} 
+                execSync(`${this.qmdCmd} collection add "${target}" --name golem-core`, {
+                    stdio: 'ignore', env: process.env, shell: true
+                });
+            } catch (e) { }
         } catch (e) {
-            console.error("❌ [Memory:Qmd] 找不到 qmd 指令。");
+            console.error(`❌ [Memory:Qmd] 找不到 qmd 指令。如果您已安裝，請在 .env 加入 GOLEM_QMD_PATH=/path/to/qmd`);
             throw new Error("QMD_MISSING");
         }
     }
 
     async recall(query) {
         return new Promise((resolve) => {
-            // 混合搜尋 + 限制 3 筆 + 只回傳內容
-            const safeQuery = query.replace(/"/g, '\\"'); 
-            const cmd = `qmd search golem-core "${safeQuery}" --hybrid --limit 3`;
-            
+            const safeQuery = query.replace(/"/g, '\\"');
+            const cmd = `${this.qmdCmd} search golem-core "${safeQuery}" --hybrid --limit 3`;
+
             exec(cmd, (err, stdout) => {
-                if (err) {
-                    // 容錯：如果是沒有搜尋結果，qmd 可能會報錯或回傳空
-                    resolve([]); 
-                    return;
-                }
+                if (err) { resolve([]); return; }
                 const result = stdout.trim();
-                // 格式化為與 Browser Driver 統一的結構
                 if (result) {
-                    // 簡單處理：將整段結果視為一個記憶塊
                     resolve([{ text: result, score: 0.95, metadata: { source: 'qmd' } }]);
-                } else {
-                    resolve([]);
-                }
+                } else { resolve([]); }
             });
         });
     }
 
     async memorize(text, metadata) {
-        // 1. 寫入實體檔案
         const filename = `mem_${Date.now()}.md`;
         const filepath = path.join(this.baseDir, filename);
-        
-        // 將 metadata 轉為 Frontmatter (可選)
-        const fileContent = `---
-date: ${new Date().toISOString()}
-type: ${metadata.type || 'general'}
----
-${text}`;
-
+        const fileContent = `---\ndate: ${new Date().toISOString()}\ntype: ${metadata.type || 'general'}\n---\n${text}`;
         fs.writeFileSync(filepath, fileContent, 'utf8');
 
-        // 2. 更新索引
-        exec(`qmd embed golem-core "${filepath}"`, (err) => {
+        exec(`${this.qmdCmd} embed golem-core "${filepath}"`, (err) => {
             if (err) console.error("⚠️ [Memory:Qmd] 索引更新失敗:", err.message);
             else console.log(`🧠 [Memory:Qmd] 已寫入知識庫: ${filename}`);
         });
     }
 }
 
+// 3. 系統原生驅動 (Native FS Mode: 純 Node.js，不依賴外部指令，適合 Windows)
+class SystemNativeDriver {
+    constructor() {
+        this.baseDir = path.join(process.cwd(), 'golem_memory', 'knowledge');
+        if (!fs.existsSync(this.baseDir)) fs.mkdirSync(this.baseDir, { recursive: true });
+    }
+
+    async init() {
+        console.log("🧠 [Memory:Native] 系統原生核心已啟動 (Pure Node.js Mode)");
+    }
+
+    async recall(query) {
+        try {
+            const files = fs.readdirSync(this.baseDir).filter(f => f.endsWith('.md'));
+            const results = [];
+            for (const file of files) {
+                const content = fs.readFileSync(path.join(this.baseDir, file), 'utf8');
+                // 簡單關鍵字匹配評分
+                const keywords = query.toLowerCase().split(/\s+/);
+                let score = 0;
+                keywords.forEach(k => { if (content.toLowerCase().includes(k)) score += 1; });
+
+                if (score > 0) {
+                    results.push({
+                        text: content.replace(/---[\s\S]*?---/, '').trim(),
+                        score: score / keywords.length,
+                        metadata: { source: file }
+                    });
+                }
+            }
+            return results.sort((a, b) => b.score - a.score).slice(0, 3);
+        } catch (e) { return []; }
+    }
+
+    async memorize(text, metadata) {
+        const filename = `mem_${Date.now()}.md`;
+        const filepath = path.join(this.baseDir, filename);
+        const fileContent = `---\ndate: ${new Date().toISOString()}\ntype: ${metadata.type || 'general'}\n---\n${text}`;
+        fs.writeFileSync(filepath, fileContent, 'utf8');
+        console.log(`🧠 [Memory:Native] 已寫入知識庫: ${filename}`);
+    }
+}
+
 // ============================================================
 // 🧠 Golem Brain (Web Gemini) - Dual-Engine Edition
 // ============================================================
-function getSystemFingerprint() { return `OS: ${os.platform()} | Arch: ${os.arch()} | Mode: ${process.env.GOLEM_MEMORY_MODE || 'browser'}`; }
+function getSystemFingerprint() { return `OS: ${os.platform()} | Arch: ${os.arch()} | Mode: ${cleanEnv(process.env.GOLEM_MEMORY_MODE || 'browser')}`; }
 
 class GolemBrain {
     constructor() {
@@ -635,11 +720,13 @@ class GolemBrain {
         this.selectors = this.doctor.loadSelectors();
 
         // ✨ [Dual-Mode] 初始化記憶引擎策略
-        const mode = (process.env.GOLEM_MEMORY_MODE || 'browser').toLowerCase();
+        const mode = cleanEnv(process.env.GOLEM_MEMORY_MODE || 'browser').toLowerCase();
         console.log(`⚙️ [System] 記憶引擎模式: ${mode.toUpperCase()}`);
-        
+
         if (mode === 'qmd') {
             this.memoryDriver = new SystemQmdDriver();
+        } else if (mode === 'native' || mode === 'system') {
+            this.memoryDriver = new SystemNativeDriver();
         } else {
             this.memoryDriver = new BrowserMemoryDriver(this);
         }
@@ -647,13 +734,13 @@ class GolemBrain {
 
     async init(forceReload = false) {
         if (this.browser && !forceReload) return;
-        
+
         // 1. 啟動瀏覽器
         if (!this.browser) {
-            this.browser = await puppeteer.launch({ 
-                headless: false, 
-                userDataDir: CONFIG.USER_DATA_DIR, 
-                args: ['--no-sandbox', '--window-size=1280,900'] 
+            this.browser = await puppeteer.launch({
+                headless: false,
+                userDataDir: CONFIG.USER_DATA_DIR,
+                args: ['--no-sandbox', '--window-size=1280,900']
             });
         }
 
@@ -668,8 +755,12 @@ class GolemBrain {
         try {
             await this.memoryDriver.init();
         } catch (e) {
-            if (e.message === 'QMD_MISSING') {
-                console.warn("🔄 [System] 偵測到 qmd 未安裝，自動降級為 Browser 模式...");
+            if (e.message === 'QMD_MISSING' || e.message.includes('bash')) {
+                console.warn("🔄 [System] 偵測到 qmd/bash 缺失，自動切換為 Native FS 模式...");
+                this.memoryDriver = new SystemNativeDriver();
+                await this.memoryDriver.init();
+            } else {
+                console.warn("🔄 [System] 記憶引擎啟動例外，降級為 Browser 模式...");
                 this.memoryDriver = new BrowserMemoryDriver(this);
                 await this.memoryDriver.init();
             }
@@ -794,7 +885,7 @@ class GolemBrain {
                         }
                     } else {
                         // 每 5 秒報告一次等待狀態
-                        if(waitTime % 5 === 0) console.log(`⏳ [F12] 等待 Gemini 開口... (${waitTime}s)`);
+                        if (waitTime % 5 === 0) console.log(`⏳ [F12] 等待 Gemini 開口... (${waitTime}s)`);
                     }
                 }
                 if (waitTime >= MAX_WAIT) console.warn("⚠️ [Monitor] 等待超時，強制截斷回應。");
@@ -1144,8 +1235,8 @@ class AutonomyManager {
 
     async sendNotification(msgText) {
         if (tgBot && CONFIG.ADMIN_IDS[0]) await tgBot.sendMessage(CONFIG.ADMIN_IDS[0], msgText);
-        else if (dcClient && process.env.DISCORD_ADMIN_ID) {
-            const user = await dcClient.users.fetch(process.env.DISCORD_ADMIN_ID);
+        else if (dcClient && CONFIG.DISCORD_ADMIN_ID) {
+            const user = await dcClient.users.fetch(CONFIG.DISCORD_ADMIN_ID);
             await user.send(msgText);
         }
     }
@@ -1197,7 +1288,7 @@ async function handleUnifiedMessage(ctx) {
             const targetPath = targetName === 'skills.js' ? path.join(process.cwd(), 'skills.js') : __filename;
             const testFile = PatchManager.createTestClone(targetPath, patches);
             let isVerified = false;
-            if (targetName === 'skills.js') { try { require(path.resolve(testFile)); isVerified = true; } catch(e) { console.error(e); } }
+            if (targetName === 'skills.js') { try { require(path.resolve(testFile)); isVerified = true; } catch (e) { console.error(e); } }
             else { isVerified = PatchManager.verify(testFile); }
             if (isVerified) {
                 global.pendingPatch = { path: testFile, target: targetPath, name: targetName, description: patch.description };
@@ -1337,7 +1428,7 @@ async function handleUnifiedCallback(ctx, actionData) {
         try {
             if (ctx.platform === 'telegram') await ctx.instance.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: ctx.chatId, message_id: ctx.event.message.message_id });
             else await ctx.event.update({ components: [] });
-        } catch(e) {}
+        } catch (e) { }
         return SystemUpgrader.performUpdate(ctx);
     }
     if (actionData === 'SYSTEM_UPDATE_CANCEL') return ctx.reply("已取消更新操作。");
@@ -1347,7 +1438,7 @@ async function handleUnifiedCallback(ctx, actionData) {
         try {
             if (ctx.platform === 'telegram') await ctx.instance.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: ctx.chatId, message_id: ctx.event.message.message_id });
             else await ctx.event.update({ components: [] });
-        } catch (e) {}
+        } catch (e) { }
         if (!task) return ctx.reply('⚠️ 任務已失效');
         if (action === 'DENY') {
             pendingTasks.delete(taskId);
@@ -1387,7 +1478,7 @@ async function executeDeploy(ctx) {
 
 async function executeDrop(ctx) {
     if (!global.pendingPatch) return;
-    try { fs.unlinkSync(global.pendingPatch.path); } catch (e) {}
+    try { fs.unlinkSync(global.pendingPatch.path); } catch (e) { }
     global.pendingPatch = null;
     memory.recordRejection();
     await ctx.reply("🗑️ 提案已丟棄");

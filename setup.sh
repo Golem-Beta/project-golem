@@ -126,6 +126,8 @@ if [ "$MODE" == "2" ]; then
     echo -e "${YELLOW}📦 正在安裝 qmd...${NC}"
     bun install -g https://github.com/tobi/qmd
     
+    # Linux/Mac 通常都有 bash，直接設為 qmd 即可
+    # 但為了與核心 Native Fallback 同步，核心會處理失敗狀況
     update_env "qmd"
 else
     echo ""
