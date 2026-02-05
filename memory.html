@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Golem Neural Cortex v8.2</title>
+    <title>Golem Neural Cortex v8.5</title>
     <style>
         body { font-family: 'Segoe UI', monospace; background: #0d1117; color: #c9d1d9; padding: 20px; }
         .status { padding: 12px; border: 1px solid #30363d; margin-bottom: 10px; border-radius: 6px; background: #161b22; }
@@ -14,9 +14,9 @@
     </style>
 </head>
 <body>
-    <h1>🧠 Golem Neural Cortex <span class="badge badge-browser">v8.2</span></h1>
-    <div style="color: #8b949e; margin-bottom: 20px;">Browser-based Vector Memory Engine</div>
-    
+    <h1>🧠 Golem Neural Cortex <span class="badge badge-browser">v8.5</span></h1>
+    <div style="color: #8b949e; margin-bottom: 20px;">Browser-based Vector Memory Engine (Neuro-Link Ready)</div>
+
     <div id="model-status" class="status">⚡ Initializing Transformers.js...</div>
     <div id="db-status" class="status">💾 Connecting to IndexedDB...</div>
     <div id="logs" class="log"></div>
@@ -37,7 +37,7 @@
 
         // UI Helper
         const log = (msg) => {
-            console.log(`[Cortex v8.2] ${msg}`);
+            console.log(`[Cortex v8.5] ${msg}`);
             const logDiv = document.getElementById('logs');
             logDiv.innerHTML = `<div><span style="color:#58a6ff">${new Date().toLocaleTimeString()}</span> - ${msg}</div>` + logDiv.innerHTML;
         };
