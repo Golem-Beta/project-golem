@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================================
-# 🦞 Project Golem v8.2 - Mac/Linux 安裝精靈
+# 🦞 Project Golem v8.5 - Mac/Linux 安裝精靈
 # ==========================================================
 
 # 定義顏色
@@ -12,7 +12,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 echo -e "${CYAN}==========================================================${NC}"
-echo -e "${CYAN}🦞 Project Golem v8.2 - 全自動安裝精靈 (Mac/Linux)${NC}"
+echo -e "${CYAN}🦞 Project Golem v8.5 (Neuro-Link) - 全自動安裝精靈${NC}"
 echo -e "${CYAN}==========================================================${NC}"
 echo ""
 
@@ -24,15 +24,15 @@ REQUIRED_FILES=("index.js" "skills.js" "package.json" "memory.html")
 MISSING_FILES=()
 
 for file in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "$file" ]; then
-        MISSING_FILES+=("$file")
-    fi
+  if [ ! -f "$file" ]; then
+    MISSING_FILES+=("$file")
+  fi
 done
 
 if [ ${#MISSING_FILES[@]} -ne 0 ]; then
-    echo -e "${RED}❌ 錯誤：核心檔案遺失！${NC}"
-    echo "遺失檔案: ${MISSING_FILES[*]}"
-    exit 1
+  echo -e "${RED}❌ 錯誤：核心檔案遺失！${NC}"
+  echo "遺失檔案: ${MISSING_FILES[*]}"
+  exit 1
 fi
 echo -e "${GREEN}✅ 核心檔案檢查通過。${NC}"
 echo ""
@@ -69,13 +69,21 @@ fi
 echo ""
 
 # ------------------------------------------------------------
-# 3. 安裝 NPM 依賴
+# 3. 安裝 NPM 依賴 (含 Dashboard)
 # ------------------------------------------------------------
-echo -e "[4/5] 正在安裝核心依賴 (NPM Install)..."
+echo -e "[4/5] 正在安裝核心依賴..."
 npm install
 if [ $? -ne 0 ]; then
     echo -e "${RED}❌ NPM 安裝失敗。請檢查網路連線。${NC}"
     exit 1
+fi
+
+echo -e "${YELLOW}📦 正在加裝 Dashboard (戰術控制台) 擴充套件...${NC}"
+npm install blessed blessed-contrib
+if [ $? -ne 0 ]; then
+    echo -e "${RED}⚠️ Dashboard 套件安裝失敗 (非致命錯誤)，您可能無法使用圖形介面。${NC}"
+else
+    echo -e "${GREEN}✅ Dashboard 套件安裝完成。${NC}"
 fi
 echo ""
 
@@ -91,13 +99,11 @@ echo ""
 
 read -p "👉 請輸入選項 [1 或 2] (預設 1): " MODE
 
-# 輔助函式：修改 .env (相容 macOS 與 Linux sed 差異)
+# 輔助函式：修改 .env
 update_env() {
     local key="GOLEM_MEMORY_MODE"
     local value="$1"
-    # 如果 .env 裡還沒有這個 key，就追加；如果有，就取代
     if grep -q "^$key=" .env; then
-        # 判斷系統是否為 macOS (Darwin)
         if [[ "$OSTYPE" == "darwin"* ]]; then
             sed -i '' "s/^$key=.*/$key=$value/" .env
         else
@@ -112,22 +118,15 @@ if [ "$MODE" == "2" ]; then
     echo ""
     echo -e "${CYAN}⚙️ 配置為：系統模式 (qmd)...${NC}"
     
-    # 檢查 Bun
     if ! command -v bun &> /dev/null; then
         echo -e "${YELLOW}📦 正在自動安裝 Bun...${NC}"
         curl -fsSL https://bun.sh/install | bash
-        
-        # 暫時加入 PATH 以便立即使用 (針對本次 Session)
         export BUN_INSTALL="$HOME/.bun"
         export PATH="$BUN_INSTALL/bin:$PATH"
     fi
-    
-    # 安裝 qmd
+
     echo -e "${YELLOW}📦 正在安裝 qmd...${NC}"
     bun install -g https://github.com/tobi/qmd
-    
-    # Linux/Mac 通常都有 bash，直接設為 qmd 即可
-    # 但為了與核心 Native Fallback 同步，核心會處理失敗狀況
     update_env "qmd"
 else
     echo ""
@@ -137,6 +136,8 @@ fi
 
 echo ""
 echo -e "${GREEN}==========================================================${NC}"
-echo -e "${GREEN}🎉 安裝完成！${NC}"
-echo -e "🚀 請輸入 ${YELLOW}npm start${NC} 啟動 Golem。"
+echo -e "${GREEN}🎉 安裝完成！(v8.5 Neuro-Link Edition)${NC}"
+echo -e "🚀 啟動命令："
+echo -e "   - 標準模式: ${YELLOW}npm start${NC}"
+echo -e "   - 戰術面板: ${YELLOW}npm start dashboard${NC}"
 echo -e "${GREEN}==========================================================${NC}"
