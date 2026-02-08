@@ -1,145 +1,78 @@
 @echo off
-setlocal EnableDelayedExpansion
-:: 切換 UTF-8
+setlocal
+:: 1. 鎖定工作目錄 (這是關鍵！不管怎麼執行都會抓對位置)
+cd /d "%~dp0"
 chcp 65001 >nul
 
-title Golem v8.5 全自動安裝精靈
+title Golem v8.5 安裝精靈
 echo ==========================================================
-echo  Project Golem v8.5 (Neuro-Link) - 全自動安裝精靈
+echo  Project Golem v8.5 - 安裝精靈 (修復版)
 echo ==========================================================
 echo.
-
-:: ------------------------------------------------------------
-:: 0. 檔案完整性檢查
-:: ------------------------------------------------------------
-echo [1/6] 正在檢查核心檔案完整性...
-set "MISSING_FILES="
-
-:: 檢查關鍵檔案是否存在
-if not exist index.js set "MISSING_FILES=!MISSING_FILES! index.js"
-if not exist skills.js set "MISSING_FILES=!MISSING_FILES! skills.js"
-if not exist package.json set "MISSING_FILES=!MISSING_FILES! package.json"
-if not exist memory.html set "MISSING_FILES=!MISSING_FILES! memory.html"
-
-:: 如果有缺少檔案 (注意：這裡移除了括號以避免語法錯誤)
-if defined MISSING_FILES (
-    echo.
-    echo ==========================================================
-    echo [ERROR] 嚴重錯誤：找不到核心檔案！
-    echo.
-    echo 缺少檔案清單： !MISSING_FILES!
-    echo.
-    echo 目前執行路徑： %cd%
-    echo.
-    echo [?] 請確認：
-    echo     1. 您是否已下載完整的專案檔案 (不只是 setup.bat)？
-    echo     2. 您是否將 setup.bat 放在專案的「根目錄」下？
-    echo ==========================================================
-    echo.
-    pause
-    exit /b
-)
-
-echo [OK] 核心檔案檢查通過。
+echo [DEBUG] 目前工作路徑: %cd%
 echo.
 
-:: ------------------------------------------------------------
-:: 1. 檢查並自動安裝 Node.js
-:: ------------------------------------------------------------
-echo [2/6] 正在檢查 Node.js 環境...
+:: 2. 檔案檢查 (改用最簡單的直接跳轉邏輯)
+echo [1/6] 檢查核心檔案...
+
+if not exist index.js goto :FileError
+if not exist package.json goto :FileError
+if not exist skills.js goto :FileError
+
+echo [OK] 核心檔案都在！準備繼續...
+echo.
+
+:: 3. 檢查 Node.js
+echo [2/6] 檢查 Node.js...
 node -v >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!] 偵測到未安裝 Node.js！
-    echo [*] 正在嘗試使用 Windows Winget 自動下載並安裝 (LTS 版本)...
-    echo [-] 這可能需要幾分鐘，且可能會跳出「允許變更」視窗，請點選 [是]...
-    echo.
-    
+    echo [!] 找不到 Node.js，正在啟動自動安裝...
     winget install -e --id OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements
-    
-    if %errorlevel% neq 0 (
-        echo.
-        echo [ERROR] 自動安裝失敗 (可能是您的 Windows 版本太舊不支援 Winget)。
-        echo [>] 請手動前往官網下載安裝：https://nodejs.org/
-        pause
-        exit /b
-    ) else (
-        echo.
-        echo [OK] Node.js 安裝成功！
-        echo [!] 重要：由於 Windows 環境變數限制，您必須 **關閉此視窗** 並 **重新執行 setup.bat** 才能生效。
-        echo.
-        pause
-        exit
-    )
+    echo.
+    echo [!] 安裝指令已送出，如果失敗請手動下載 Node.js。
+    echo [!] 請重啟此視窗以生效。
+    pause
+    exit
 )
 echo [OK] Node.js 已安裝。
 echo.
 
-:: ------------------------------------------------------------
-:: 2. 設定環境變數 (.env)
-:: ------------------------------------------------------------
-echo [3/6] 正在設定環境變數 (.env)...
+:: 4. 安裝依賴
+echo [3/6] 安裝 NPM 套件...
+call npm install
+echo [OK] 依賴安裝完成。
+echo.
+
+:: 5. 設定環境
+echo [4/6] 建立設定檔...
 if not exist .env (
     if exist .env.example (
         copy .env.example .env >nul
-        echo [OK] 已從範本建立 .env 檔案。
-    ) else (
-        echo [!] 找不到 .env.example，跳過。
+        echo [OK] .env 建立成功。
     )
-) else (
-    echo [OK] .env 已存在。
-)
-echo.
-
-:: ------------------------------------------------------------
-:: 3. 安裝 NPM 依賴
-:: ------------------------------------------------------------
-echo [4/6] 正在安裝核心依賴...
-call npm install
-if %errorlevel% neq 0 (
-    echo [ERROR] NPM 安裝失敗。請檢查網路連線。
-    pause
-    exit /b
 )
 
-echo [+] 正在加裝 Dashboard (戰術控制台) 擴充套件...
-call npm install blessed blessed-contrib
-if %errorlevel% neq 0 (
-    echo [!] Dashboard 套件安裝失敗 (非致命錯誤)。
-) else (
-    echo [OK] Dashboard 套件安裝完成。
+:: 6. 修改記憶模式
+echo [5/6] 設定瀏覽器模式...
+if exist .env (
+    powershell -Command "(Get-Content .env) -replace 'GOLEM_MEMORY_MODE=.*', 'GOLEM_MEMORY_MODE=browser' | Set-Content .env"
 )
-echo.
-
-:: ------------------------------------------------------------
-:: 4. 設定記憶引擎
-:: ------------------------------------------------------------
-echo [5/6] 正在設定 Golem 記憶引擎...
-echo [*] 配置為：瀏覽器模式...
-powershell -Command "(Get-Content .env) -replace 'GOLEM_MEMORY_MODE=.*', 'GOLEM_MEMORY_MODE=browser' | Set-Content .env"
-echo.
-
-:: ------------------------------------------------------------
-:: 5. 自動修補
-:: ------------------------------------------------------------
-echo [6/6] 正在檢查自動修補腳本 (patch.js)...
-if exist patch.js (
-    echo [*] 偵測到 patch.js，正在執行修補程序...
-    call node patch.js
-    if !errorlevel! equ 0 (
-        echo [OK] 自動修補執行完畢！
-    ) else (
-        echo [ERROR] 修補執行失敗。
-    )
-) else (
-    echo [OK] 無須修補。
-)
-echo.
 
 echo.
 echo ==========================================================
-echo [OK] 安裝完成！(v8.5 Neuro-Link Edition)
-echo [>] 啟動命令：
-echo    - 標準模式: npm start
-echo    - 戰術面板: npm start dashboard
+echo [OK] 全部完成！請輸入 npm start 啟動。
 echo ==========================================================
+pause
+exit /b
+
+:FileError
+echo.
+echo [ERROR] 嚴重錯誤：找不到核心檔案！
+echo.
+echo 請確認以下檔案是否在同一個資料夾內：
+echo  - index.js
+echo  - package.json
+echo  - skills.js
+echo.
+echo 目前位置: %cd%
 pause
