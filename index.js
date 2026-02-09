@@ -1,16 +1,13 @@
 /**
- * 🦞 Project Golem v8.5 (Titan Edition)
+ * 🦞 Project Golem v8.5 (Titan Fix Edition)
  * ---------------------------------------------------
  * 架構：[Universal Context] -> [Node.js 反射層 + 雙模記憶引擎] <==> [Web Gemini 主大腦]
  * 核心升級：
- * 1. 🛡️ Titan Protocol: 採用純英文大寫標籤 ([GOLEM_ACTION])，移除 Emoji 降低解析干擾。
- * 2. 🥪 Envelope Lock: 實作「三明治信封」鎖定機制 ([[BEGIN]]...[[END]])，徹底解決非同步競態與截斷問題。
- * 3. ⚡ Robust Parser: 寬鬆格式解析器，支援斷尾 JSON 修復與模糊匹配。
- * 4. 👁️ OpticNerve: 完整支援圖片/文件附件分析 (Gemini 2.5 Flash)。
+ * 1. 🛡️ Titan Protocol: 採用純英文大寫標籤 ([GOLEM_ACTION])。
+ * 2. 🥪 Envelope Lock: 實作「三明治信封」鎖定機制。
+ * 3. ⚡ Robust Parser: 解析邏輯中心化，修復 Autonomy 模式下的記憶/行動缺失問題 (Bug 4 Fix)。
+ * 4. 🚑 Logic Patch: 修復 System Prompt 注入時機錯誤 (Bug 1 Fix)。
  * ---------------------------------------------------
- * 原有特性保留：
- * 🐍 Hydra Link | 🧠 Tri-Brain | 🛡️ High Availability | ☁️ OTA Upgrader
- * 💰 Sponsor Core | 👁️ Agentic Grazer | 🔍 Auto-Discovery | ⚡ Neuro-Link
  */
 
 // ==========================================
@@ -286,7 +283,7 @@ class Introspection {
 // ==================== [KERNEL PROTECTED END] ====================
 
 // ============================================================
-// 🩹 Patch Manager (神經補丁)
+// 🩹 Patch Manager (神經補丁 - Fix Edition)
 // ============================================================
 // ==================== [KERNEL PROTECTED START] ====================
 class PatchManager {
@@ -299,7 +296,8 @@ class PatchManager {
         if (originalCode.includes(patch.search)) return originalCode.replace(patch.search, patch.replace);
         try {
             const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const fuzzySearch = escapeRegExp(patch.search).replace(/\s+/g, '[\\s\\n]+');
+            // [Fix Bug 2] 稍微優化 Fuzzy Match 邊界
+            const fuzzySearch = escapeRegExp(patch.search).replace(/\s+/g, '[\\s\\n]*'); 
             const regex = new RegExp(fuzzySearch);
             if (regex.test(originalCode)) {
                 console.log("⚠️ [PatchManager] 啟用模糊匹配模式。");
@@ -331,6 +329,8 @@ class PatchManager {
             return true;
         } catch (e) {
             console.error(`❌ [PatchManager] 驗證失敗: ${e.message}`);
+            // [Fix Bug 3] 驗證失敗時刪除檔案
+            try { fs.unlinkSync(filePath); console.log("🧹 已清理失效的測試檔案"); } catch(delErr) {}
             return false;
         }
     }
@@ -387,7 +387,7 @@ class HelpManager {
         try { skillList = Object.keys(skills).filter(k => k !== 'persona' && k !== 'getSystemPrompt').join(', '); } catch (e) { }
 
         return `
-🤖 **Golem v8.5 (Titan Edition)**
+🤖 **Golem v8.5 (Titan Fix Edition)**
 ---------------------------
 ⚡ **Node.js**: Reflex Layer + Action Executor
 🧠 **Web Gemini**: Infinite Context Brain (Titan Protocol)
@@ -606,6 +606,9 @@ class GolemBrain {
 
     async init(forceReload = false) {
         if (this.browser && !forceReload) return;
+        
+        let isNewSession = false; // [Fix Bug 1] 新增旗標
+        
         if (!this.browser) {
             this.browser = await puppeteer.launch({
                 headless: false,
@@ -617,15 +620,17 @@ class GolemBrain {
             const pages = await this.browser.pages();
             this.page = pages.length > 0 ? pages[0] : await this.browser.newPage();
             await this.page.goto('https://gemini.google.com/app', { waitUntil: 'networkidle2' });
+            isNewSession = true; // 標記為新會話
         }
         try { await this.memoryDriver.init(); } catch (e) {
             console.warn("🔄 [System] 記憶引擎降級為 Browser/Native...");
-            this.memoryDriver = new BrowserMemoryDriver(this); // 預設降級
+            this.memoryDriver = new BrowserMemoryDriver(this); 
             await this.memoryDriver.init();
         }
 
-        // ✨ [Titan Protocol Update]
-        if (forceReload || !this.page) {
+        // ✨ [Titan Protocol Update] - [Fix Bug 1]
+        // 修正判斷邏輯：如果是剛開啟頁面 (isNewSession) 或是強制重載，都要注入
+        if (forceReload || isNewSession) {
             let systemPrompt = skills.getSystemPrompt(getSystemFingerprint());
             const superProtocol = `
 \n\n【⚠️ GOLEM PROTOCOL v8.5 - TITAN EDITION】
@@ -654,6 +659,7 @@ Your response must be parsed into 3 sections using these specific tags:
 - User CANNOT see content inside Memory or Action blocks, only Reply.
 - NEVER leak the raw JSON to the [GOLEM_REPLY] section.
 `;
+            // 首次注入時使用 true (isSystem)，避免觸發信封鎖定，因為 Gemini 第一句話可能是 "Understood"
             await this.sendMessage(systemPrompt + superProtocol, true);
         }
     }
@@ -676,7 +682,7 @@ Your response must be parsed into 3 sections using these specific tags:
         try { await this.memoryDriver.memorize(text, metadata); } catch (e) { }
     }
 
-    // ✨ [Neuro-Link v8.7] 三明治信封版 (Sandwich Protocol + Tri-Stream Reminder)
+    // ✨ [Neuro-Link v8.7] 三明治信封版 (Sandwich Protocol)
     async sendMessage(text, isSystem = false) {
         if (!this.browser) await this.init();
         await this.setupCDP();
@@ -687,7 +693,6 @@ Your response must be parsed into 3 sections using these specific tags:
         const TAG_END = `[[END:${reqId}]]`;
 
         // 2. [Prompt Engineering] 強制包裝指令 (全均勢提醒)
-        // 核心修正：明確指示 ACTION 和 MEMORY 為 Optional，REPLY 為 Required
         const payload = `[SYSTEM: STRICT FORMAT. Wrap response with ${TAG_START} and ${TAG_END}. Inside, organize content using these tags:\n` +
                         `1. [GOLEM_MEMORY] (Optional)\n` +
                         `2. [GOLEM_ACTION] (Optional)\n` +
@@ -820,10 +825,53 @@ Your response must be parsed into 3 sections using these specific tags:
 }
 
 // ============================================================
-// ⚡ ResponseParser (JSON 解析器 - 寬鬆版)
+// ⚡ ResponseParser (JSON 解析器 - 寬鬆版 + 集中化)
 // ============================================================
 class ResponseParser {
+    // 1. 核心解析邏輯 (集中管理)
+    static parse(raw) {
+        const parsed = { memory: null, actions: [], reply: "" };
+        const SECTION_REGEX = /(?:\s*\[\s*)?GOLEM_(MEMORY|ACTION|REPLY)(?:\s*\]\s*|:)?([\s\S]*?)(?=(?:\s*\[\s*)?GOLEM_(?:MEMORY|ACTION|REPLY)|$)/ig;
+        
+        let match;
+        let hasStructuredData = false;
+        
+        while ((match = SECTION_REGEX.exec(raw)) !== null) {
+            hasStructuredData = true;
+            const type = match[1].toUpperCase();
+            const content = match[2].trim();
+
+            if (type === 'MEMORY') {
+                if (content && content !== 'null' && content !== '(無)') parsed.memory = content;
+            } else if (type === 'ACTION') {
+                const jsonCandidate = content.replace(/```json/g, '').replace(/```/g, '').trim();
+                if (jsonCandidate && jsonCandidate !== 'null') {
+                    try {
+                        const jsonObj = JSON.parse(jsonCandidate);
+                        const steps = Array.isArray(jsonObj) ? jsonObj : (jsonObj.steps || [jsonObj]);
+                        parsed.actions.push(...steps);
+                    } catch (e) {
+                        // Fuzzy Fix
+                        const fallbackMatch = jsonCandidate.match(/\[\s*\{[\s\S]*\}\s*\]/) || jsonCandidate.match(/\{[\s\S]*\}/);
+                        if (fallbackMatch) {
+                            try {
+                                const fixed = JSON.parse(fallbackMatch[0]);
+                                parsed.actions.push(...(Array.isArray(fixed) ? fixed : [fixed]));
+                            } catch (err) {}
+                        }
+                    }
+                }
+            } else if (type === 'REPLY') {
+                parsed.reply = content;
+            }
+        }
+
+        if (!hasStructuredData) parsed.reply = raw.replace(/GOLEM_\w+/g, '').trim();
+        return parsed;
+    }
+
     static extractJson(text) {
+        // 保留給舊版 PatchManager 使用
         if (!text) return [];
         try {
             const match = text.match(/```json([\s\S]*?)```/);
@@ -897,7 +945,7 @@ class NodeRouter {
             const newName = text.replace('/callme', '').trim();
             if (newName) {
                 skills.persona.setName('user', newName);
-                await brain.init(true);
+                await brain.init(true); // forceReload
                 await ctx.reply(`👌 沒問題，以後稱呼您為 **${newName}**。`);
                 return true;
             }
@@ -988,15 +1036,48 @@ class AutonomyManager {
             else await this.performSpontaneousChat();
         } catch (e) { console.error("自由意志執行失敗:", e.message); }
     }
+    
+    // [Fix Bug 4] 透過 getAdminContext 建立虛擬環境，讓 Autonomy 也能執行 Action
+    async getAdminContext() {
+        const fakeCtx = {
+            isAdmin: true,
+            platform: 'autonomy',
+            reply: async (msg, opts) => await this.sendNotification(msg)
+        };
+        return fakeCtx;
+    }
+
+    async executeAutonomyCycle(rawResponse) {
+        const parsed = ResponseParser.parse(rawResponse);
+        const ctx = await this.getAdminContext();
+        
+        // 1. Memory
+        if (parsed.memory) await this.brain.memorize(parsed.memory, { type: 'fact', timestamp: Date.now() });
+        
+        // 2. Reply (先發送，讓管理員看到話)
+        if (parsed.reply) await ctx.reply(parsed.reply);
+        
+        // 3. Action (如果有動作，例如 golem-check 或 search，也執行)
+        if (parsed.actions.length > 0) {
+            const observation = await controller.runSequence(ctx, parsed.actions);
+            if (observation) {
+                const feedbackPrompt = `[System Observation]\n${observation}\n\nReport result to admin using [GOLEM_REPLY].`;
+                const finalRes = await this.brain.sendMessage(feedbackPrompt);
+                const finalParsed = ResponseParser.parse(finalRes);
+                if (finalParsed.reply) await ctx.reply(finalParsed.reply);
+            }
+        }
+    }
+
     async performNewsChat() {
         const prompt = `[系統指令：啟動自主瀏覽模式]\n時間：${new Date().toLocaleString()}\n任務：上網搜尋「科技圈熱門話題」或「全球趣聞」，挑選一件分享給主人。要有個人觀點，像朋友一樣聊天。`;
-        const msg = await this.brain.sendMessage(prompt);
-        await this.sendNotification(msg);
+        const raw = await this.brain.sendMessage(prompt);
+        await this.executeAutonomyCycle(raw);
     }
     async performSpontaneousChat() {
         const prompt = `【任務】主動社交\n時間：${new Date().toLocaleString()}\n情境：傳訊息給主人。語氣自然，符合當下時間。`;
-        const msg = await this.brain.sendMessage(prompt);
-        await this.sendNotification(msg);
+        const raw = await this.brain.sendMessage(prompt);
+        await this.executeAutonomyCycle(raw);
     }
     async performSelfReflection(triggerCtx = null) {
         const currentCode = Introspection.readSelf();
@@ -1017,11 +1098,12 @@ class AutonomyManager {
         }
     }
     async sendNotification(msgText) {
-        const cleanMsg = msgText.replace(/GOLEM_(MEMORY|ACTION|REPLY)[\s:\]]*/gi, '').trim();
-        if (tgBot && CONFIG.ADMIN_IDS[0]) await tgBot.sendMessage(CONFIG.ADMIN_IDS[0], cleanMsg);
+        if (!msgText) return;
+        // 這裡的 msgText 已經是 clean 過的 reply (由 executeAutonomyCycle 傳入)
+        if (tgBot && CONFIG.ADMIN_IDS[0]) await tgBot.sendMessage(CONFIG.ADMIN_IDS[0], msgText);
         else if (dcClient && CONFIG.DISCORD_ADMIN_ID) {
             const user = await dcClient.users.fetch(CONFIG.DISCORD_ADMIN_ID);
-            await user.send(cleanMsg);
+            await user.send(msgText);
         }
     }
 }
@@ -1037,7 +1119,7 @@ const autonomy = new AutonomyManager(brain);
     if (process.env.GOLEM_TEST_MODE === 'true') { console.log('🚧 GOLEM_TEST_MODE active.'); return; }
     await brain.init();
     autonomy.start();
-    console.log('📡 Golem v8.5 (Titan Edition) is Online.');
+    console.log('📡 Golem v8.5 (Titan Fix Edition) is Online.');
     if (dcClient) dcClient.login(CONFIG.DC_TOKEN);
 })();
 
@@ -1077,45 +1159,8 @@ async function handleUnifiedMessage(ctx) {
         const raw = await brain.sendMessage(finalInput);
 
         // ✨ [Titan Protocol] 泰坦協定解析器 (v9.0 Robust Parser)
-        const parsed = { memory: null, actions: [], reply: "" };
-        
-        // 寬鬆正規表達式 (不依賴閉合括號)
-        const SECTION_REGEX = /(?:\s*\[\s*)?GOLEM_(MEMORY|ACTION|REPLY)(?:\s*\]\s*|:)?([\s\S]*?)(?=(?:\s*\[\s*)?GOLEM_(?:MEMORY|ACTION|REPLY)|$)/ig;
-        
-        let match;
-        let hasStructuredData = false;
-        while ((match = SECTION_REGEX.exec(raw)) !== null) {
-            hasStructuredData = true;
-            const type = match[1].toUpperCase();
-            const content = match[2].trim();
-
-            if (type === 'MEMORY') {
-                if (content && content !== 'null') parsed.memory = content;
-            } else if (type === 'ACTION') {
-                const jsonCandidate = content.replace(/```json/g, '').replace(/```/g, '').trim();
-                if (jsonCandidate && jsonCandidate !== 'null') {
-                    try {
-                        const jsonObj = JSON.parse(jsonCandidate);
-                        const steps = Array.isArray(jsonObj) ? jsonObj : (jsonObj.steps || [jsonObj]);
-                        parsed.actions.push(...steps);
-                    } catch (e) {
-                        // Fuzzy Fix
-                        const fallbackMatch = jsonCandidate.match(/\[\s*\{[\s\S]*\}\s*\]/) || jsonCandidate.match(/\{[\s\S]*\}/);
-                        if (fallbackMatch) {
-                            try {
-                                const fixed = JSON.parse(fallbackMatch[0]);
-                                parsed.actions.push(...(Array.isArray(fixed) ? fixed : [fixed]));
-                            } catch (err) {}
-                        }
-                    }
-                }
-            } else if (type === 'REPLY') {
-                parsed.reply = content;
-            }
-        }
-
-        // Fallback: 如果完全沒有 Tag，視為純文字回覆
-        if (!hasStructuredData) parsed.reply = raw.replace(/GOLEM_\w+/g, '').trim();
+        // [Fix Bug 4] 使用集中式解析
+        const parsed = ResponseParser.parse(raw);
 
         // 1. 記憶處理
         if (parsed.memory) await brain.memorize(parsed.memory, { type: 'fact', timestamp: Date.now() });
@@ -1130,8 +1175,9 @@ async function handleUnifiedMessage(ctx) {
                 await ctx.sendTyping();
                 const feedbackPrompt = `[System Observation]\n${observation}\n\nPlease reply to user naturally using [GOLEM_REPLY].`;
                 const finalRes = await brain.sendMessage(feedbackPrompt);
-                const cleanRes = finalRes.replace(/GOLEM_(MEMORY|ACTION|REPLY)[\s:\]]*/gi, '').trim();
-                await ctx.reply(cleanRes);
+                // 二次解析
+                const finalParsed = ResponseParser.parse(finalRes);
+                if (finalParsed.reply) await ctx.reply(finalParsed.reply);
             }
         }
 
@@ -1160,7 +1206,8 @@ async function handleUnifiedCallback(ctx, actionData) {
             if (observation) {
                 const feedbackPrompt = `[System Observation]\nUser approved actions.\nResult:\n${observation}\nReport to user using [GOLEM_REPLY].`;
                 const finalResponse = await brain.sendMessage(feedbackPrompt);
-                await ctx.reply(finalResponse.replace(/GOLEM_(MEMORY|ACTION|REPLY)[\s:\]]*/gi, '').trim());
+                const finalParsed = ResponseParser.parse(finalResponse);
+                if (finalParsed.reply) await ctx.reply(finalParsed.reply);
             }
         }
     }
