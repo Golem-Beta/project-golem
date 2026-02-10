@@ -44,7 +44,7 @@ const cleanEnv = (str, allowSpaces = false) => {
     if (!str) return "";
     let cleaned = str.replace(/[^\x20-\x7E]/g, "");
     if (!allowSpaces) cleaned = cleaned.replace(/\s/g, "");
-    return cleaned.trim();
+    return (cleaned || "").trim();
 };
 
 const isPlaceholder = (str) => {
@@ -345,8 +345,9 @@ class SecurityManager {
         this.BLOCK_PATTERNS = [/rm\s+-rf\s+\//, /rd\s+\/s\s+\/q\s+[c-zC-Z]:\\$/, />\s*\/dev\/sd/, /:(){:|:&};:/, /mkfs/, /Format-Volume/, /dd\s+if=/, /chmod\s+[-]x\s+/];
     }
     assess(cmd) {
-        const baseCmd = cmd.trim().split(/\s+/)[0];
-        if (this.BLOCK_PATTERNS.some(regex => regex.test(cmd))) return { level: 'BLOCKED', reason: '毀滅性指令' };
+        const safeCmd = (cmd || "").trim();
+        const baseCmd = safeCmd.split(/\s+/)[0];
+        if (this.BLOCK_PATTERNS.some(regex => regex.test(safeCmd))) return { level: 'BLOCKED', reason: '毀滅性指令' };
         if (this.SAFE_COMMANDS.includes(baseCmd)) return { level: 'SAFE' };
         const dangerousOps = ['rm', 'mv', 'chmod', 'chown', 'sudo', 'su', 'reboot', 'shutdown', 'npm uninstall', 'Remove-Item', 'Stop-Computer'];
         if (dangerousOps.includes(baseCmd)) return { level: 'DANGER', reason: '高風險操作' };
@@ -363,7 +364,7 @@ class ToolScanner {
         const isWin = os.platform() === 'win32';
         const checkCmd = isWin ? `where ${toolName}` : `which ${toolName}`;
         try {
-            const path = execSync(checkCmd, { encoding: 'utf-8', stdio: 'pipe' }).trim().split('\n')[0];
+            const path = execSync(checkCmd, { encoding: 'utf-8', stdio: 'pipe' }).toString().trim().split('\n')[0];
             return `✅ **已安裝**: \`${toolName}\`\n路徑: ${path}`;
         } catch (e) {
             return `❌ **未安裝**: \`${toolName}\`\n(系統找不到此指令)`;
@@ -461,7 +462,7 @@ class DOMDoctor {
                 const genAI = new GoogleGenerativeAI(this.keyChain.getKey());
                 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
                 const result = await model.generateContent(prompt);
-                const newSelector = result.response.text().trim().replace(/`/g, '').replace(/^css\s*/, '');
+                const newSelector = (result.response.text() || "").trim().replace(/`/g, '').replace(/^css\s*/, '');
                 if (newSelector.length > 0) return newSelector;
             } catch (e) { attempts++; }
         }
@@ -683,6 +684,7 @@ Your response must be parsed into 3 sections using these specific tags:
     // ✨ [Neuro-Link v8.7] 三明治信封版 (Sandwich Protocol)
     async sendMessage(text, isSystem = false) {
         if (!this.browser) await this.init();
+        try { await this.page.bringToFront(); } catch (e) {} // 強制切換至前台，避免背景凍結
         await this.setupCDP();
 
         // 1. 生成頭尾標記 (Header/Footer Tags)
@@ -837,7 +839,7 @@ class ResponseParser {
         while ((match = SECTION_REGEX.exec(raw)) !== null) {
             hasStructuredData = true;
             const type = match[1].toUpperCase();
-            const content = match[2].trim();
+            const content = (match[2] || "").trim();
 
             if (type === 'MEMORY') {
                 if (content && content !== 'null' && content !== '(無)') parsed.memory = content;
@@ -972,7 +974,7 @@ class SystemUpgrader {
 // ============================================================
 class NodeRouter {
     static async handle(ctx, brain) {
-        const text = ctx.text ? ctx.text.trim() : "";
+        const text = (ctx.text || "").trim();
         if (text.match(/^\/(help|menu|指令|功能)/)) { await ctx.reply(HelpManager.getManual(), { parse_mode: 'Markdown' }); return true; }
         if (text === '/donate' || text === '/support' || text === '贊助') {
             await ctx.reply(`☕ **感謝您的支持！**\n\n${CONFIG.DONATE_URL}\n\n(Golem 覺得開心 🤖❤️)`);
@@ -1010,26 +1012,27 @@ class TaskController {
         let reportBuffer = [];
         for (let i = startIndex; i < steps.length; i++) {
             const step = steps[i];
-            const risk = this.security.assess(step.cmd);
-            if (step.cmd.startsWith('golem-check')) {
-                const toolName = step.cmd.split(' ')[1];
+            const cmdToRun = step.cmd || step.parameter || step.command || "";
+            const risk = this.security.assess(cmdToRun);
+            if (cmdToRun.startsWith('golem-check')) {
+                const toolName = cmdToRun.split(' ')[1];
                 reportBuffer.push(toolName ? `🔍 [ToolCheck] ${ToolScanner.check(toolName)}` : `⚠️ 缺少參數`);
                 continue;
             }
-            if (risk.level === 'BLOCKED') return `⛔ 指令被系統攔截：${step.cmd}`;
+            if (risk.level === 'BLOCKED') return `⛔ 指令被系統攔截：${cmdToRun}`;
             if (risk.level === 'WARNING' || risk.level === 'DANGER') {
                 const approvalId = uuidv4();
                 pendingTasks.set(approvalId, { steps, nextIndex: i, ctx });
-                await ctx.reply(`${risk.level === 'DANGER' ? '🔥' : '⚠️'} **請求確認**\n指令：\`${step.cmd}\`\n風險：${risk.reason}`, {
+                await ctx.reply(`${risk.level === 'DANGER' ? '🔥' : '⚠️'} **請求確認**\n指令：\`${cmdToRun}\`\n風險：${risk.reason}`, {
                     reply_markup: { inline_keyboard: [[{ text: '✅ 批准', callback_data: `APPROVE:${approvalId}` }, { text: '🛡️ 駁回', callback_data: `DENY:${approvalId}` }]] }
                 });
                 return null;
             }
             try {
                 if (!this.internalExecutor) this.internalExecutor = new Executor();
-                const output = await this.internalExecutor.run(step.cmd);
-                reportBuffer.push(`[Step ${i + 1} Success] cmd: ${step.cmd}\nResult:\n${output.trim() || "(No stdout)"}`);
-            } catch (err) { reportBuffer.push(`[Step ${i + 1} Failed] cmd: ${step.cmd}\nError:\n${err.message}`); }
+                const output = await this.internalExecutor.run(cmdToRun);
+                reportBuffer.push(`[Step ${i + 1} Success] cmd: ${cmdToRun}\nResult:\n${(output || "").trim() || "(No stdout)"}`);
+            } catch (err) { reportBuffer.push(`[Step ${i + 1} Failed] cmd: ${cmdToRun}\nError:\n${err.message}`); }
         }
         return reportBuffer.join('\n\n----------------\n\n');
     }
