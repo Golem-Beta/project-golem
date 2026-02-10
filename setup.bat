@@ -23,7 +23,7 @@ if not exist memory.html set "MISSING_FILES=!MISSING_FILES! memory.html"
 
 if defined MISSING_FILES (
     echo.
-    echo [ERROR] 錯誤：核心檔案遺失！ "!MISSING_FILES!"
+    echo [ERROR] 錯誤: 核心檔案遺失^! "!MISSING_FILES!"
     echo.
     echo 請確認您已下載所有檔案，並將 setup.bat 放在專案資料夾內。
     pause
@@ -38,23 +38,23 @@ echo.
 echo [2/6] 正在檢查 Node.js 環境...
 node -v >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [!] 偵測到未安裝 Node.js！
-    echo [*] 正在嘗試使用 Windows Winget 自動下載並安裝 (LTS 版本)...
+    echo [^!] 偵測到未安裝 Node.js^!
+    echo [*] 正在嘗試使用 Windows Winget 自動下載並安裝 ^(LTS 版本^)...
     echo [-] 這可能需要幾分鐘，且可能會跳出「允許變更」視窗，請點選 [是]...
     echo.
 
     winget install -e --id OpenJS.NodeJS.LTS --silent --accept-source-agreements --accept-package-agreements
 
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo.
-        echo [ERROR] 自動安裝失敗 (可能是您的 Windows 版本太舊不支援 Winget)。
-        echo [>] 請手動前往官網下載安裝：https://nodejs.org/
+        echo [ERROR] 自動安裝失敗 ^(可能是您的 Windows 版本太舊不支援 Winget^).
+        echo [^>] 請手動前往官網下載安裝：https://nodejs.org/
         pause
         exit /b
     ) else (
         echo.
-        echo [OK] Node.js 安裝成功！
-        echo [!] 重要：由於 Windows 環境變數限制，您必須 **關閉此視窗** 並 **重新執行 setup.bat** 才能生效。
+        echo [OK] Node.js 安裝成功^!
+        echo [^!] 重要: 由於 Windows 環境變數限制，您必須 **關閉此視窗** 並 **重新執行 setup.bat** 才能生效。
         echo.
         pause
         exit
@@ -72,7 +72,7 @@ if not exist .env (
         copy .env.example .env >nul
         echo [OK] 已從範本建立 .env 檔案。
     ) else (
-        echo [!] 找不到 .env.example，跳過。
+        echo [^!] 找不到 .env.example，跳過。
     )
 ) else (
     echo [OK] .env 已存在。
@@ -93,7 +93,7 @@ if %errorlevel% neq 0 (
 echo [*] 正在加裝 Dashboard (戰術控制台) 擴充套件...
 call npm install blessed blessed-contrib
 if %errorlevel% neq 0 (
-    echo [!] Dashboard 套件安裝失敗 (非致命錯誤)，您可能無法使用圖形介面。
+    echo [^!] Dashboard 套件安裝失敗 ^(非致命錯誤^)，您可能無法使用圖形介面。
 ) else (
     echo [OK] Dashboard 套件安裝完成。
 )
@@ -103,7 +103,7 @@ echo.
 :: 5. 設定記憶引擎 (Windows 僅支援瀏覽器模式)
 :: ------------------------------------------------------------
 echo [5/6] 正在設定 Golem 記憶引擎...
-echo [*] 配置為：瀏覽器模式 (原生推薦)...
+echo [*] 配置為：瀏覽器模式 ^(原生推薦^)...
 powershell -Command "(Get-Content .env) -replace 'GOLEM_MEMORY_MODE=.*', 'GOLEM_MEMORY_MODE=browser' | Set-Content .env"
 echo.
 
@@ -117,13 +117,13 @@ if exist patch.js (
     call node patch.js
     echo ----------------------------------------------------------
     if !errorlevel! equ 0 (
-        echo [OK] 自動修補執行完畢！
-        echo [-] (若需保留補丁紀錄，patch.js 檔案將保留在目錄中)
+        echo [OK] 自動修補執行完畢^!
+        echo [-] ^(若需保留補丁紀錄，patch.js 檔案將保留在目錄中^)
     ) else (
         echo [ERROR] 修補執行失敗，請檢查上方錯誤訊息。
     )
 ) else (
-    echo [OK] 無須修補 (未偵測到 patch.js)。
+    echo [OK] 無須修補 ^(未偵測到 patch.js^).
 )
 echo.
 
@@ -132,8 +132,8 @@ goto finish
 :finish
 echo.
 echo ==========================================================
-echo [OK] 安裝完成！(v8.5 Neuro-Link Edition)
-echo [>] 啟動命令：
+echo [OK] 安裝完成^! (v8.5 Neuro-Link Edition)
+echo [^>] 啟動命令:
 echo    - 標準模式: npm start
 echo    - 戰術面板: npm start dashboard
 echo ==========================================================
