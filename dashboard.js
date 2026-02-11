@@ -1,10 +1,11 @@
 /**
  * 檔案名稱: dashboard.js
- * 版本: v8.5 (Neuro-Link Monitor Edition)
+ * 版本: v8.6 (Titan Chronos Monitor)
  * ---------------------------------------
  * 更新重點：
- * 1. 支援 Neuro-Link 雙軌訊號的色彩高亮 (CDP vs DOM)。
- * 2. 狀態面板新增 Neuro-Link 狀態指示。
+ * 1. 🟢 新增 Chronos 時序雷達：捕捉並顯示系統排程任務。
+ * 2. 🚦 新增 Queue 流量監控：視覺化對話隊列狀態。
+ * 3. 🎨 介面升級：適配 v8.6 核心架構。
  */
 const blessed = require('blessed');
 const contrib = require('blessed-contrib');
@@ -16,130 +17,98 @@ class DashboardPlugin {
         this.originalLog = console.log;
         this.originalError = console.error;
         this.isDetached = false;
+        
+        // 狀態追蹤
+        this.queueCount = 0;
+        this.lastSchedule = "無排程";
 
         // 2. 初始化螢幕
         this.screen = blessed.screen({
             smartCSR: true,
-            title: '🦞 Golem v8.5 戰術控制台 (Neuro-Link)',
+            title: '🦞 Golem v8.6 戰術控制台 (Titan Chronos)',
             fullUnicode: true
         });
 
-        // 3. 建立網格
+        // 3. 建立網格 (12x12)
         this.grid = new contrib.grid({ rows: 12, cols: 12, screen: this.screen });
 
         // --- 介面元件佈局 ---
 
-        // 左上：系統負載
-        this.cpuLine = this.grid.set(0, 0, 4, 6, contrib.line, {
+        // [左上] 系統心跳 (CPU/RAM)
+        this.cpuLine = this.grid.set(0, 0, 4, 8, contrib.line, {
             style: { line: "yellow", text: "green", baseline: "black" },
-            label: '⚡ 系統負載 (RAM/CPU)',
+            label: '⚡ 系統核心 (System Core)',
             showLegend: true
         });
 
-        // 左下：核心日誌 (升級：支援 Neuro-Link 高亮)
-        this.logBox = this.grid.set(4, 0, 7, 6, contrib.log, {
-            fg: "green",
-            selectedFg: "lightgreen",
-            label: '📠 神經網路日誌 (Neuro-Link Logs)',
-            tags: true // 啟用顏色標籤解析
-        });
-
-        // 右上：狀態面板
-        this.statusBox = this.grid.set(0, 6, 4, 6, contrib.markdown, {
-            label: '🧠 引擎狀態',
+        // [右上] 狀態概覽 (Status)
+        this.statusBox = this.grid.set(0, 8, 4, 4, contrib.markdown, {
+            label: '📊 狀態 (Status)',
+            tags: true,
             style: { border: { fg: 'cyan' } }
         });
 
-        // 右下：三流協定
-        this.chatBox = this.grid.set(4, 6, 7, 6, contrib.log, {
+        // [中層] 時序雷達 (Chronos Log) - 專門顯示排程與時間相關資訊
+        this.chronosLog = this.grid.set(4, 0, 3, 6, contrib.log, {
+            fg: "green",
+            selectedFg: "green",
+            label: '⏰ 時序雷達 (Chronos Radar)'
+        });
+
+        // [中層] 隊列監控 (Queue Log) - 專門顯示對話進出
+        this.queueLog = this.grid.set(4, 6, 3, 6, contrib.log, {
+            fg: "magenta",
+            selectedFg: "magenta",
+            label: '🚦 隊列交通 (Traffic Control)'
+        });
+
+        // [底層] 全域日誌 (Global Log)
+        this.logBox = this.grid.set(7, 0, 5, 12, contrib.log, {
             fg: "white",
-            selectedFg: "cyan",
-            label: '💬 三流協定 (對話/行動)'
+            selectedFg: "white",
+            label: '📝 核心日誌 (Neuro-Link Stream)'
         });
 
-        // --- 底部說明列 ---
-        this.footer = blessed.box({
-            parent: this.screen,
-            bottom: 0,
-            left: 0,
-            width: '100%',
-            height: 1,
-            content: ' {bold}F12{/bold}: 關閉畫面(不停止程式) | {bold}Ctrl+C{/bold}: 完全停止 | {bold}v8.5 Neuro-Link{/bold} ',
-            style: { fg: 'black', bg: 'cyan' },
-            tags: true
-        });
-
-        // 數據容器
-        this.memData = { title: 'RAM (MB)', x: Array(10).fill(' '), y: Array(10).fill(0), style: { line: 'red' } };
-
-        // 啟動攔截
-        this.setupOverride();
+        // 4. 資料初始化
+        this.memData = { title: 'Memory (MB)', x: Array(60).fill(0).map((_, i) => i.toString()), y: Array(60).fill(0) };
+        
+        // 5. 綁定按鍵
+        this.screen.key(['escape', 'q', 'C-c'], () => this.detach());
+        
+        // 6. 啟動攔截器
+        this.hijackConsole();
         this.startMonitoring();
-        this.setupKeys();
-
         this.screen.render();
     }
 
-    // 設定按鍵監聽
-    setupKeys() {
-        this.screen.key(['C-c', 'q'], () => {
-            this.screen.destroy();
-            console.log = this.originalLog;
-            console.error = this.originalError; // 修正變數名稱錯誤
-            console.log("🛑 Golem 系統已完全終止。");
-            process.exit(0);
-        });
-
-        this.screen.key(['f12'], () => {
-            this.detach();
-        });
-    }
-
-    // 核心：劫持 console (v8.5 增強版)
-    setupOverride() {
+    hijackConsole() {
         console.log = (...args) => {
-            if (this.isDetached) return this.originalLog(...args);
+            this.originalLog.apply(console, args); // 保持原輸出
+            if (this.isDetached) return;
 
-            let msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+            const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
+            const time = new Date().toLocaleTimeString();
+            const formattedMsg = `{gray-fg}[${time}]{/gray-fg} ${msg}`;
 
-            // --- v8.5 Neuro-Link 色彩增強邏輯 ---
-            let logMsg = msg;
+            // 分流邏輯
+            if (msg.includes('[Chronos]') || msg.includes('排程') || msg.includes('TimeWatcher')) {
+                if (this.chronosLog) this.chronosLog.log(`{yellow-fg}${msg}{/yellow-fg}`);
+                if (msg.includes('新增排程')) this.lastSchedule = msg.split('新增排程:')[1] || "更新中...";
+            } 
+            else if (msg.includes('[Queue]') || msg.includes('隊列')) {
+                if (this.queueLog) this.queueLog.log(`{magenta-fg}${msg}{/magenta-fg}`);
+                // 簡單的狀態解析
+                if (msg.includes('加入隊列')) this.queueCount++;
+                if (msg.includes('開始處理')) this.queueCount = Math.max(0, this.queueCount - 1);
+            }
             
-            // 1. CDP 網路層訊號 (Cyan/Blue)
-            if (msg.includes('[CDP]')) {
-                logMsg = `{cyan-fg}${msg}{/cyan-fg}`;
-            }
-            // 2. DOM 視覺層訊號 (Yellow)
-            else if (msg.includes('[DOM]') || msg.includes('[F12]')) {
-                logMsg = `{yellow-fg}${msg}{/yellow-fg}`;
-            }
-            // 3. Brain 決策訊號 (Magenta)
-            else if (msg.includes('[Brain]')) {
-                logMsg = `{magenta-fg}${msg}{/magenta-fg}`;
-            }
-            // 4. OpticNerve 視覺訊號 (Blue)
-            else if (msg.includes('[OpticNerve]') || msg.includes('[Vision]')) {
-                logMsg = `{blue-fg}${msg}{/blue-fg}`;
-            }
-
-            // 寫入日誌面板
-            if (this.logBox) this.logBox.log(logMsg);
-
-            // 分流邏輯 (ChatBox)
-            if (msg.includes('[💬 REPLY]') || msg.includes('—-回覆開始—-')) {
-                const text = msg.replace('[💬 REPLY]', '').replace('—-回覆開始—-','').substring(0, 60);
-                if (this.chatBox) this.chatBox.log(`\x1b[36m[回覆]\x1b[0m ${text}...`);
-            }
-            else if (msg.includes('[🤖 ACTION_PLAN]')) {
-                if (this.chatBox) this.chatBox.log(`\x1b[33m[行動]\x1b[0m 偵測到指令`);
-            }
-            else if (msg.includes('[🧠 MEMORY_IMPRINT]')) {
-                if (this.chatBox) this.chatBox.log(`\x1b[35m[記憶]\x1b[0m 寫入記憶`);
-            }
+            // 全域顯示
+            if (this.logBox) this.logBox.log(formattedMsg);
         };
 
         console.error = (...args) => {
-            if (this.isDetached) return this.originalError(...args);
+            this.originalError.apply(console, args);
+            if (this.isDetached) return;
             const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
             if (this.logBox) this.logBox.log(`{red-fg}[錯誤] ${msg}{/red-fg}`);
         };
@@ -152,7 +121,7 @@ class DashboardPlugin {
         console.error = this.originalError;
         console.log("\n============================================");
         console.log("📺 Dashboard 已關閉 (Visual Interface Detached)");
-        console.log("🤖 Golem 仍在背景執行中...");
+        console.log("🤖 Golem v8.6 仍在背景執行中...");
         console.log("============================================\n");
     }
 
@@ -160,6 +129,7 @@ class DashboardPlugin {
         this.timer = setInterval(() => {
             if (this.isDetached) return clearInterval(this.timer);
 
+            // CPU/Mem 模擬數據 (或真實數據)
             const memUsage = process.memoryUsage().heapUsed / 1024 / 1024;
             this.memData.y.shift();
             this.memData.y.push(memUsage);
@@ -170,13 +140,17 @@ class DashboardPlugin {
             const hours = Math.floor(uptime / 3600);
             const minutes = Math.floor((uptime % 3600) / 60);
 
-            // 狀態面板更新 (加入 Neuro-Link 狀態)
+            // 狀態面板更新 (v8.6 特有狀態)
             this.statusBox.setMarkdown(`
-# 核心狀態
+# 核心狀態 (v8.6)
 - **模式**: ${mode}
-- **記憶體**: ${memUsage.toFixed(0)} MB
+- **記憶**: Active
 - **運行**: ${hours}h ${minutes}m
-- **連結**: 🟢 Neuro-Link (Dual)
+
+# Titan Chronos
+- **隊列**: ${this.queueCount > 0 ? `{red-fg}${this.queueCount} 處理中{/red-fg}` : `{green-fg}空閒{/green-fg}`}
+- **排程**: ${this.lastSchedule.substring(0, 10)}...
+- **狀態**: 🟢 Online
 `);
             this.screen.render();
         }, 1000);
