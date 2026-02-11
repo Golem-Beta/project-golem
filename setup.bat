@@ -5,9 +5,9 @@ cd /d "%~dp0"
 :: 切換 UTF-8 編碼
 chcp 65001 >nul
 
-title Golem v8.5 全自動安裝精靈
+title Golem v8.6 全自動安裝精靈 (Titan Chronos)
 echo ==========================================================
-echo  Project Golem v8.5 (Neuro-Link) - 全自動安裝精靈
+echo  Project Golem v8.6 (Titan Chronos) - 全自動安裝精靈
 echo ==========================================================
 echo.
 
@@ -20,12 +20,14 @@ if not exist index.js set "MISSING_FILES=!MISSING_FILES! index.js"
 if not exist skills.js set "MISSING_FILES=!MISSING_FILES! skills.js"
 if not exist package.json set "MISSING_FILES=!MISSING_FILES! package.json"
 if not exist memory.html set "MISSING_FILES=!MISSING_FILES! memory.html"
+:: [v8.6 新增] 檢查儀表板檔案，這對監控排程很重要
+if not exist dashboard.js set "MISSING_FILES=!MISSING_FILES! dashboard.js"
 
 if defined MISSING_FILES (
     echo.
     echo [ERROR] 錯誤: 核心檔案遺失^! "!MISSING_FILES!"
     echo.
-    echo 請確認您已下載所有檔案，並將 setup.bat 放在專案資料夾內。
+    echo 請確認您已下載所有檔案 (包含 dashboard.js)，並將 setup.bat 放在專案資料夾內。
     pause
     exit /b
 )
@@ -103,7 +105,7 @@ echo.
 :: 5. 設定記憶引擎 (Windows 僅支援瀏覽器模式)
 :: ------------------------------------------------------------
 echo [5/6] 正在設定 Golem 記憶引擎...
-echo [*] 配置為：瀏覽器模式 ^(原生推薦^)...
+echo [*] 配置為：瀏覽器模式 ^(Native Chronos Ready^)...
 powershell -Command "(Get-Content .env) -replace 'GOLEM_MEMORY_MODE=.*', 'GOLEM_MEMORY_MODE=browser' | Set-Content .env"
 echo.
 
@@ -132,9 +134,9 @@ goto finish
 :finish
 echo.
 echo ==========================================================
-echo [OK] 安裝完成^! (v8.5 Neuro-Link Edition)
+echo [OK] 安裝完成^! (v8.6 Titan Chronos Edition)
 echo [^>] 啟動命令:
 echo    - 標準模式: npm start
-echo    - 戰術面板: npm start dashboard
+echo    - 戰術面板: npm start dashboard (推薦: 可監控排程與隊列)
 echo ==========================================================
 pause
