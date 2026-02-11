@@ -1,12 +1,13 @@
 /**
- * 🦞 Project Golem v8.5 (Titan Queue Edition)
+ * 🦞 Project Golem v8.6 (Titan Chronos Edition)
  * ---------------------------------------------------
  * 架構：[Universal Context] -> [Conversation Queue] -> [NeuroShunter] <==> [Web Gemini]
  * 核心升級：
  * 1. 🧬 NeuroShunter: 統一處理解析、記憶與行動。
  * 2. 🛡️ Titan Protocol: 強制三流協定 (Memory/Action/Reply)。
- * 3. 🚦 Conversation Manager: 新增對話隊列與防抖機制，解決 Puppeteer 單執行緒衝突。
- * 4. 🚑 Logic Patch: 保留原有熱修復能力。
+ * 3. 🚦 Conversation Manager: 對話隊列與防抖機制。
+ * 4. ⏰ TimeWatcher: 新增時間軸任務排程與輪詢機制 (Chronos)。
+ * 5. 🚑 Logic Patch: 保留原有熱修復能力。
  * ---------------------------------------------------
  */
 
@@ -386,13 +387,14 @@ class HelpManager {
         try { skillList = Object.keys(skills).filter(k => k !== 'persona' && k !== 'getSystemPrompt').join(', '); } catch (e) { }
 
         return `
-🤖 **Golem v8.5 (Titan Queue Edition)**
+🤖 **Golem v8.6 (Titan Chronos Edition)**
 ---------------------------
 ⚡ **Node.js**: Reflex Layer + Action Executor
 🧠 **Web Gemini**: Infinite Context Brain (Titan Protocol)
 🌗 **Dual-Memory**: ${cleanEnv(process.env.GOLEM_MEMORY_MODE || 'browser')} mode
 🥪 **Sync Mode**: Envelope/Sandwich Lock (Reliable)
 🚦 **Queue**: Debounce & Serialization Active
+⏰ **Chronos**: Timeline Scheduler Active
 🔍 **Auto-Discovery**: Active
 👁️ **OpticNerve**: Vision Enabled
 🔌 **Neuro-Link**: CDP Network Interception Active
@@ -472,7 +474,7 @@ class DOMDoctor {
 }
 
 // ============================================================
-// 🧠 Memory Drivers (雙模記憶驅動)
+// 🧠 Memory Drivers (雙模記憶驅動 + 排程擴充)
 // ============================================================
 class BrowserMemoryDriver {
     constructor(brain) { this.brain = brain; }
@@ -497,6 +499,20 @@ class BrowserMemoryDriver {
         await this.brain.memoryPage.evaluate(async (t, m) => {
             if (window.addMemory) await window.addMemory(t, m);
         }, text, metadata);
+    }
+    
+    // ✨ [Chronos Update] 排程接口
+    async addSchedule(task, time) {
+        if (!this.brain.memoryPage) return;
+        await this.brain.memoryPage.evaluate(async (t, time) => {
+            if (window.addSchedule) await window.addSchedule(t, time);
+        }, task, time);
+    }
+    async checkDueTasks() {
+        if (!this.brain.memoryPage) return [];
+        return await this.brain.memoryPage.evaluate(async () => {
+            return window.checkSchedule ? await window.checkSchedule() : [];
+        });
     }
 }
 
@@ -556,6 +572,9 @@ class SystemQmdDriver {
         fs.writeFileSync(filepath, `---\ndate: ${new Date().toISOString()}\ntype: ${metadata.type || 'general'}\n---\n${text}`, 'utf8');
         exec(`${this.qmdCmd} embed golem-core "${filepath}"`, (err) => { if (err) console.error("⚠️ [Memory:Qmd] 索引失敗"); });
     }
+    // QMD 暫不支援排程，僅作空實作
+    async addSchedule(task, time) { console.warn("⚠️ QMD 模式不支援排程"); }
+    async checkDueTasks() { return []; }
 }
 
 class SystemNativeDriver {
@@ -583,6 +602,9 @@ class SystemNativeDriver {
         const filepath = path.join(this.baseDir, filename);
         fs.writeFileSync(filepath, `---\ndate: ${new Date().toISOString()}\ntype: ${metadata.type || 'general'}\n---\n${text}`, 'utf8');
     }
+    // Native 暫不支援排程
+    async addSchedule(task, time) { console.warn("⚠️ Native 模式不支援排程"); }
+    async checkDueTasks() { return []; }
 }
 
 // ============================================================
@@ -632,7 +654,7 @@ class GolemBrain {
         if (forceReload || isNewSession) {
             let systemPrompt = skills.getSystemPrompt(getSystemFingerprint());
             const superProtocol = `
-\n\n【⚠️ GOLEM PROTOCOL v8.5 - TITAN QUEUE】
+\n\n【⚠️ GOLEM PROTOCOL v8.6 - TITAN CHRONOS】
 You act as a middleware OS. You MUST strictly follow this output format.
 DO NOT use emojis in tags. DO NOT output raw text outside of these blocks.
 
@@ -657,6 +679,7 @@ Your response must be parsed into 3 sections using these specific tags:
 - The tags [GOLEM_MEMORY], [GOLEM_ACTION], [GOLEM_REPLY] are MANDATORY anchors.
 - User CANNOT see content inside Memory or Action blocks, only Reply.
 - NEVER leak the raw JSON to the [GOLEM_REPLY] section.
+- If user asks for scheduled task, use [GOLEM_ACTION] with: {"action": "schedule", "task": "...", "time": "ISO8601"}
 `;
             await this.sendMessage(systemPrompt + superProtocol, true);
         }
@@ -880,12 +903,30 @@ class NeuroShunter {
         }
 
         if (parsed.actions.length > 0) {
-            const observation = await controller.runSequence(ctx, parsed.actions);
-            if (observation) {
-                if (ctx.sendTyping) await ctx.sendTyping();
-                const feedbackPrompt = `[System Observation]\n${observation}\n\nPlease reply to user naturally using [GOLEM_REPLY].`;
-                const finalRes = await brain.sendMessage(feedbackPrompt);
-                await this.dispatch(ctx, finalRes, brain, controller);
+            // [Chronos Update] 攔截排程指令
+            const normalActions = [];
+            for (const act of parsed.actions) {
+                if (act.action === 'schedule') {
+                    if (brain.memoryDriver.addSchedule) {
+                        console.log(`📅 [Chronos] 新增排程: ${act.task} @ ${act.time}`);
+                        await brain.memoryDriver.addSchedule(act.task, act.time);
+                        await ctx.reply(`⏰ 已設定排程：${act.task} (於 ${act.time} 執行)`);
+                    } else {
+                        await ctx.reply("⚠️ 當前記憶模式不支援排程功能。");
+                    }
+                } else {
+                    normalActions.push(act);
+                }
+            }
+
+            if (normalActions.length > 0) {
+                const observation = await controller.runSequence(ctx, normalActions);
+                if (observation) {
+                    if (ctx.sendTyping) await ctx.sendTyping();
+                    const feedbackPrompt = `[System Observation]\n${observation}\n\nPlease reply to user naturally using [GOLEM_REPLY].`;
+                    const finalRes = await brain.sendMessage(feedbackPrompt);
+                    await this.dispatch(ctx, finalRes, brain, controller);
+                }
             }
         }
     }
@@ -1095,7 +1136,31 @@ class AutonomyManager {
     start() {
         if (!CONFIG.TG_TOKEN && !CONFIG.DC_TOKEN) return;
         this.scheduleNextAwakening();
+        
+        // ✨ [Chronos Update] 啟動時間守望者 (每 60 秒檢查一次)
+        setInterval(() => this.timeWatcher(), 60000);
     }
+    
+    // ✨ [Chronos Update] 輪詢排程
+    async timeWatcher() {
+        if (!this.brain.memoryDriver || !this.brain.memoryDriver.checkDueTasks) return;
+        try {
+            const tasks = await this.brain.memoryDriver.checkDueTasks();
+            if (tasks && tasks.length > 0) {
+                console.log(`⏰ [TimeWatcher] 發現 ${tasks.length} 個到期任務！`);
+                for (const task of tasks) {
+                    const adminCtx = await this.getAdminContext(); 
+                    const prompt = `【⏰ 系統排程觸發】\n時間：${task.time}\n任務內容：${task.task}\n\n請根據任務內容，主動向使用者發送訊息或執行操作。`;
+                    if (typeof convoManager !== 'undefined') {
+                        await convoManager.enqueue(adminCtx, prompt);
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("TimeWatcher Error:", e);
+        }
+    }
+
     scheduleNextAwakening() {
         const waitMs = (2 + Math.random() * 3) * 3600000;
         const nextWakeTime = new Date(Date.now() + waitMs);
@@ -1171,14 +1236,14 @@ const brain = new GolemBrain();
 const controller = new TaskController();
 const autonomy = new AutonomyManager(brain);
 
-// ✨ 新增：初始化隊列管理器
+// ✨ [Titan Queue] 初始化隊列管理器
 const convoManager = new ConversationManager(brain, NeuroShunter, controller);
 
 (async () => {
     if (process.env.GOLEM_TEST_MODE === 'true') { console.log('🚧 GOLEM_TEST_MODE active.'); return; }
     await brain.init();
     autonomy.start();
-    console.log('📡 Golem v8.5 (Titan Queue Edition) is Online.');
+    console.log('📡 Golem v8.6 (Titan Chronos Edition) is Online.');
     if (dcClient) dcClient.login(CONFIG.DC_TOKEN);
 })();
 
@@ -1197,15 +1262,13 @@ async function handleUnifiedMessage(ctx) {
     }
 
     // [Round 1: 接收 & 預處理]
-    // 雖然真正送出會延遲，但先顯示 typing 讓使用者安心
     await ctx.sendTyping();
 
     try {
         let finalInput = ctx.text;
         const attachment = await ctx.getAttachment();
 
-        // 圖片分析比較耗時，且通常不需要防抖合併，所以這裡先做分析
-        // 當然，如果使用者連傳三張圖，這部分會並發執行，但最後 enqueue 會是順序的
+        // 圖片分析
         if (attachment) {
             await ctx.reply("👁️ 正在透過 OpticNerve 分析檔案...");
             const apiKey = brain.doctor.keyChain.getKey();
@@ -1217,8 +1280,7 @@ async function handleUnifiedMessage(ctx) {
 
         if (!finalInput && !attachment) return;
 
-        // ✨ 關鍵修改：不再直接 brain.sendMessage，而是交給隊列
-        // RAG 記憶檢索也移入隊列處理時才做，確保是針對「合併後的完整訊息」找記憶
+        // ✨ [Titan Queue] 交給隊列，不再直接 sendMessage
         await convoManager.enqueue(ctx, finalInput);
 
     } catch (e) { console.error(e); await ctx.reply(`❌ 錯誤: ${e.message}`); }
