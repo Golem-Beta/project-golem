@@ -411,7 +411,7 @@ ${CONFIG.DONATE_URL}
 }
 
 // ============================================================
-// 🗝️ KeyChain & 🚑 DOM Doctor
+// 🗝️ KeyChain & 🚑 DOM Doctor (已修復 AI 廢話導致崩潰問題)
 // ============================================================
 class KeyChain {
     constructor() {
@@ -457,17 +457,59 @@ class DOMDoctor {
     async diagnose(htmlSnippet, targetDescription) {
         if (this.keyChain.keys.length === 0) return null;
         console.log(`🚑 [Doctor] 啟動深層診斷: "${targetDescription}"...`);
-        const safeHtml = htmlSnippet.length > 30000 ? htmlSnippet.substring(0, 30000) + "..." : htmlSnippet;
-        const prompt = `你是 Puppeteer 專家。HTML Selector 失效。目標: "${targetDescription}"。HTML: ${safeHtml}。請只回傳一個最佳 CSS Selector。`;
+        
+        // 截斷過長的 HTML 以免爆 Token，但保留足夠長度供分析
+        const safeHtml = htmlSnippet.length > 50000 ? htmlSnippet.substring(0, 50000) + "..." : htmlSnippet;
+        
+        // ⚡ [Fix] 強制要求 JSON 格式，並加入各種禁令，防止 AI 寫作文
+        const prompt = `你是 Puppeteer 自動化專家。目前的 CSS Selector 失效，目標是選取: "${targetDescription}"。
+請分析以下 HTML 結構，找出一個最穩定、最不容易報錯的 CSS Selector。
+
+HTML 片段 (部分):
+\`\`\`html
+${safeHtml}
+\`\`\`
+
+⚠️ **絕對嚴格的輸出規則 (違反會導致系統崩潰)：**
+1. **只允許輸出 JSON 格式**，格式為：{"selector": "你的CSS選擇器"}
+2. **絕對禁止** 任何解釋、前言、Markdown 標記 (如 \`\`\`json) 或其他文字。
+3. 如果找不到，回傳 {"selector": ""}`;
+
         let attempts = 0;
         while (attempts < this.keyChain.keys.length) {
             try {
                 const genAI = new GoogleGenerativeAI(this.keyChain.getKey());
                 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
                 const result = await model.generateContent(prompt);
-                const newSelector = (result.response.text() || "").trim().replace(/`/g, '').replace(/^css\s*/, '');
-                if (newSelector.length > 0) return newSelector;
-            } catch (e) { attempts++; }
+                const rawText = result.response.text().trim();
+                
+                // 🧹 清洗邏輯：提取 JSON
+                let selector = "";
+                try {
+                    // 1. 嘗試移除 Markdown code block 標記
+                    const jsonStr = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                    // 2. 解析 JSON
+                    const parsed = JSON.parse(jsonStr);
+                    selector = parsed.selector;
+                } catch (jsonErr) {
+                    console.warn(`⚠️ [Doctor] JSON 解析失敗，嘗試暴力提取 (Raw: ${rawText.substring(0, 50)}...)`);
+                    // Fallback: 如果 AI 還是回傳了文字，嘗試抓取最後一行看起來像 Selector 的東西
+                    const lines = rawText.split('\n').filter(l => l.trim().length > 0);
+                    const lastLine = lines[lines.length - 1].trim();
+                    if (!lastLine.includes(' ')) selector = lastLine; // 簡單 heuristic
+                }
+
+                // 最後防線：檢查 selector 是否包含非法字符或過長 (這通常代表又是廢話)
+                if (selector && selector.length > 0 && selector.length < 150 && !selector.includes('問題')) {
+                     console.log(`✅ [Doctor] 診斷成功，新 Selector: ${selector}`);
+                     return selector;
+                } else {
+                    console.warn(`⚠️ [Doctor] AI 提供的 Selector 無效或包含雜訊: ${selector}`);
+                }
+            } catch (e) { 
+                console.error(`❌ [Doctor] 診斷 API 錯誤: ${e.message}`);
+                attempts++; 
+            }
         }
         return null;
     }
