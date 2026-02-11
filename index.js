@@ -1,12 +1,12 @@
 /**
- * 🦞 Project Golem v8.5 (Titan Final Edition)
+ * 🦞 Project Golem v8.5 (Titan Queue Edition)
  * ---------------------------------------------------
- * 架構：[Universal Context] -> [NeuroShunter 分流中樞] <==> [Web Gemini 主大腦]
+ * 架構：[Universal Context] -> [Conversation Queue] -> [NeuroShunter] <==> [Web Gemini]
  * 核心升級：
- * 1. 🧬 NeuroShunter: 新增神經分流器，統一處理 User/Autonomy 的解析、記憶與行動。
+ * 1. 🧬 NeuroShunter: 統一處理解析、記憶與行動。
  * 2. 🛡️ Titan Protocol: 強制三流協定 (Memory/Action/Reply)。
- * 3. 🥪 Envelope Lock: 實作「三明治信封」鎖定機制，解決競態問題。
- * 4. 🚑 Logic Patch: 修復 System Prompt 注入時機與自主行為邏輯。
+ * 3. 🚦 Conversation Manager: 新增對話隊列與防抖機制，解決 Puppeteer 單執行緒衝突。
+ * 4. 🚑 Logic Patch: 保留原有熱修復能力。
  * ---------------------------------------------------
  */
 
@@ -328,7 +328,7 @@ class PatchManager {
             return true;
         } catch (e) {
             console.error(`❌ [PatchManager] 驗證失敗: ${e.message}`);
-            try { fs.unlinkSync(filePath); console.log("🧹 已清理失效的測試檔案"); } catch(delErr) {}
+            try { fs.unlinkSync(filePath); console.log("🧹 已清理失效的測試檔案"); } catch (delErr) { }
             return false;
         }
     }
@@ -386,12 +386,13 @@ class HelpManager {
         try { skillList = Object.keys(skills).filter(k => k !== 'persona' && k !== 'getSystemPrompt').join(', '); } catch (e) { }
 
         return `
-🤖 **Golem v8.5 (Titan Final Edition)**
+🤖 **Golem v8.5 (Titan Queue Edition)**
 ---------------------------
 ⚡ **Node.js**: Reflex Layer + Action Executor
 🧠 **Web Gemini**: Infinite Context Brain (Titan Protocol)
 🌗 **Dual-Memory**: ${cleanEnv(process.env.GOLEM_MEMORY_MODE || 'browser')} mode
 🥪 **Sync Mode**: Envelope/Sandwich Lock (Reliable)
+🚦 **Queue**: Debounce & Serialization Active
 🔍 **Auto-Discovery**: Active
 👁️ **OpticNerve**: Vision Enabled
 🔌 **Neuro-Link**: CDP Network Interception Active
@@ -529,7 +530,8 @@ class SystemQmdDriver {
                 } else throw new Error("QMD_NOT_FOUND");
             }
             console.log(`🧠 [Memory:Qmd] 引擎連線成功: ${this.qmdCmd}`);
-            try { execSync(`${this.qmdCmd} collection add "${path.join(this.baseDir, '*.md')}" --name golem-core`, { stdio: 'ignore', env: process.env, shell: true });
+            try {
+                execSync(`${this.qmdCmd} collection add "${path.join(this.baseDir, '*.md')}" --name golem-core`, { stdio: 'ignore', env: process.env, shell: true });
             } catch (e) { }
         } catch (e) {
             console.error(`❌ [Memory:Qmd] 找不到 qmd。`);
@@ -606,8 +608,8 @@ class GolemBrain {
 
     async init(forceReload = false) {
         if (this.browser && !forceReload) return;
-        let isNewSession = false; // [Fix Bug 1] 新增旗標
-        
+        let isNewSession = false;
+
         if (!this.browser) {
             this.browser = await puppeteer.launch({
                 headless: false,
@@ -619,7 +621,7 @@ class GolemBrain {
             const pages = await this.browser.pages();
             this.page = pages.length > 0 ? pages[0] : await this.browser.newPage();
             await this.page.goto('https://gemini.google.com/app', { waitUntil: 'networkidle2' });
-            isNewSession = true; // 標記為新會話
+            isNewSession = true;
         }
         try { await this.memoryDriver.init(); } catch (e) {
             console.warn("🔄 [System] 記憶引擎降級為 Browser/Native...");
@@ -627,12 +629,10 @@ class GolemBrain {
             await this.memoryDriver.init();
         }
 
-        // ✨ [Titan Protocol Update] - [Fix Bug 1]
-        // 修正判斷邏輯：如果是剛開啟頁面 (isNewSession) 或是強制重載，都要注入
         if (forceReload || isNewSession) {
             let systemPrompt = skills.getSystemPrompt(getSystemFingerprint());
             const superProtocol = `
-\n\n【⚠️ GOLEM PROTOCOL v8.5 - TITAN EDITION】
+\n\n【⚠️ GOLEM PROTOCOL v8.5 - TITAN QUEUE】
 You act as a middleware OS. You MUST strictly follow this output format.
 DO NOT use emojis in tags. DO NOT output raw text outside of these blocks.
 
@@ -646,7 +646,7 @@ Your response must be parsed into 3 sections using these specific tags:
 (Write JSON execution plan here. Must be valid JSON Array or Object.)
 \`\`\`json
 [
-  {"action": "command", "parameter": "..."}
+{"action": "command", "parameter": "..."}
 ]
 \`\`\`
 
@@ -658,7 +658,6 @@ Your response must be parsed into 3 sections using these specific tags:
 - User CANNOT see content inside Memory or Action blocks, only Reply.
 - NEVER leak the raw JSON to the [GOLEM_REPLY] section.
 `;
-            // 首次注入時使用 true (isSystem)，避免觸發信封鎖定，因為 Gemini 第一句話可能是 "Understood"
             await this.sendMessage(systemPrompt + superProtocol, true);
         }
     }
@@ -684,32 +683,28 @@ Your response must be parsed into 3 sections using these specific tags:
     // ✨ [Neuro-Link v8.7] 三明治信封版 (Sandwich Protocol)
     async sendMessage(text, isSystem = false) {
         if (!this.browser) await this.init();
-        try { await this.page.bringToFront(); } catch (e) {} // 強制切換至前台，避免背景凍結
+        try { await this.page.bringToFront(); } catch (e) { }
         await this.setupCDP();
 
-        // 1. 生成頭尾標記 (Header/Footer Tags)
         const reqId = Date.now().toString(36).slice(-4);
         const TAG_START = `[[BEGIN:${reqId}]]`;
         const TAG_END = `[[END:${reqId}]]`;
 
-        // 2. [Prompt Engineering] 強制包裝指令 (全均勢提醒)
         const payload = `[SYSTEM: STRICT FORMAT. Wrap response with ${TAG_START} and ${TAG_END}. Inside, organize content using these tags:\n` +
-                        `1. [GOLEM_MEMORY] (Optional)\n` +
-                        `2. [GOLEM_ACTION] (Optional)\n` +
-                        `3. [GOLEM_REPLY] (Required)\n` +
-                        `Do not output raw text outside tags.]\n\n${text}`;
+            `1. [GOLEM_MEMORY] (Optional)\n` +
+            `2. [GOLEM_ACTION] (Optional)\n` +
+            `3. [GOLEM_REPLY] (Required)\n` +
+            `Do not output raw text outside tags.]\n\n${text}`;
 
         console.log(`📡 [Brain] 發送訊號: ${reqId} (三流全激活模式)`);
 
         const tryInteract = async (sel, retryCount = 0) => {
             try {
-                // --- A. 建立基準線 (Baseline) ---
                 const baseline = await this.page.evaluate((s) => {
                     const bubbles = document.querySelectorAll(s);
                     return bubbles.length > 0 ? bubbles[bubbles.length - 1].innerText : "";
                 }, sel.response);
 
-                // --- B. 輸入與發送 ---
                 const inputExists = await this.page.$(sel.input);
                 if (!inputExists) throw new Error(`找不到輸入框: ${sel.input}`);
 
@@ -728,7 +723,6 @@ Your response must be parsed into 3 sections using these specific tags:
 
                 if (isSystem) { await new Promise(r => setTimeout(r, 2000)); return ""; }
 
-                // --- C. 信封鎖定 (Envelope Lock) ---
                 console.log(`⚡ [Brain] 等待信封完整性 (${TAG_START} ... ${TAG_END})...`);
 
                 const finalResponse = await this.page.evaluate(async (selector, startTag, endTag, oldText) => {
@@ -744,22 +738,16 @@ Your response must be parsed into 3 sections using these specific tags:
                             const currentLastBubble = bubbles[bubbles.length - 1];
                             const rawText = currentLastBubble.innerText || "";
 
-                            // 🔍 檢查點 1: 是否看見「頭部標記」?
                             const startIndex = rawText.indexOf(startTag);
                             if (startIndex !== -1) {
-                                // 🔍 檢查點 2: 是否看見「尾部標記」? (完美狀態)
                                 const endIndex = rawText.indexOf(endTag);
                                 if (endIndex !== -1 && endIndex > startIndex) {
-                                    // ✅ 頭尾俱全
                                     const content = rawText.substring(startIndex + startTag.length, endIndex).trim();
                                     resolve({ status: 'ENVELOPE_COMPLETE', text: content });
                                     return;
                                 }
-
-                                // ⚠️ 只有頭沒有尾：可能正在生成，或是被截斷
-                                // 啟動防抖動 (Debounce) 機制
                                 if (rawText === lastCheckText && rawText.length > lastCheckText.length) {
-                                    stableCount = 0; // 還在變長，繼續等
+                                    stableCount = 0;
                                 } else if (rawText === lastCheckText) {
                                     stableCount++;
                                 } else {
@@ -767,15 +755,12 @@ Your response must be parsed into 3 sections using these specific tags:
                                 }
                                 lastCheckText = rawText;
 
-                                // 如果內容停住不動超過 2.5 秒，但還是沒看到尾巴 -> 判定為「被截斷 (Truncated)」
                                 if (stableCount > 5) {
                                     const content = rawText.substring(startIndex + startTag.length).trim();
                                     resolve({ status: 'ENVELOPE_TRUNCATED', text: content });
                                     return;
                                 }
                             }
-                            // 🔍 檢查點 3: 連頭都沒有? (Gemini 忘記指令)
-                            // 退回到 Diff 檢查
                             else if (rawText !== oldText && !rawText.includes('SYSTEM: Please WRAP')) {
                                 if (rawText === lastCheckText && rawText.length > 5) stableCount++;
                                 else stableCount = 0;
@@ -794,7 +779,6 @@ Your response must be parsed into 3 sections using these specific tags:
 
                 console.log(`🏁 [Brain] 捕獲: ${finalResponse.status} | 長度: ${finalResponse.text.length}`);
 
-                // 最終淨化 (包含 Diff Fallback 可能殘留的 tag)
                 let cleanText = finalResponse.text
                     .replace(TAG_START, '')
                     .replace(TAG_END, '')
@@ -805,7 +789,6 @@ Your response must be parsed into 3 sections using these specific tags:
 
             } catch (e) {
                 console.warn(`⚠️ [Brain] 操作異常: ${e.message}`);
-                // 自癒機制
                 if (retryCount === 0) {
                     console.log("🚑 [Brain] 呼叫 DOM Doctor 進行緊急手術...");
                     const htmlDump = await this.page.content();
@@ -828,7 +811,6 @@ Your response must be parsed into 3 sections using these specific tags:
 // ⚡ ResponseParser (JSON 解析器 - 寬鬆版 + 集中化)
 // ============================================================
 class ResponseParser {
-    // 1. 核心解析邏輯 (集中管理)
     static parse(raw) {
         const parsed = { memory: null, actions: [], reply: "" };
         const SECTION_REGEX = /(?:\s*\[\s*)?GOLEM_(MEMORY|ACTION|REPLY)(?:\s*\]\s*|:)?([\s\S]*?)(?=(?:\s*\[\s*)?GOLEM_(?:MEMORY|ACTION|REPLY)|$)/ig;
@@ -851,13 +833,12 @@ class ResponseParser {
                         const steps = Array.isArray(jsonObj) ? jsonObj : (jsonObj.steps || [jsonObj]);
                         parsed.actions.push(...steps);
                     } catch (e) {
-                        // Fuzzy Fix
                         const fallbackMatch = jsonCandidate.match(/\[\s*\{[\s\S]*\}\s*\]/) || jsonCandidate.match(/\{[\s\S]*\}/);
                         if (fallbackMatch) {
                             try {
                                 const fixed = JSON.parse(fallbackMatch[0]);
                                 parsed.actions.push(...(Array.isArray(fixed) ? fixed : [fixed]));
-                            } catch (err) {}
+                            } catch (err) { }
                         }
                     }
                 }
@@ -871,7 +852,6 @@ class ResponseParser {
     }
 
     static extractJson(text) {
-        // 保留給舊版 PatchManager 使用
         if (!text) return [];
         try {
             const match = text.match(/```json([\s\S]*?)```/);
@@ -887,41 +867,24 @@ class ResponseParser {
 // 🧬 NeuroShunter (神經分流中樞 - 核心邏輯層)
 // ============================================================
 class NeuroShunter {
-    /**
-     * 統一處理輸入訊號，執行解析、記憶、行動與回覆
-     * @param {Object} ctx - UniversalContext 或 AdminContext
-     * @param {String} rawResponse - Gemini 的原始回應
-     * @param {GolemBrain} brain - 大腦實例
-     * @param {TaskController} controller - 行動控制器
-     */
     static async dispatch(ctx, rawResponse, brain, controller) {
-        // 1. 解析 (Parse)
         const parsed = ResponseParser.parse(rawResponse);
 
-        // 2. 記憶 (Memory)
         if (parsed.memory) {
             console.log(`🧠 [Memory] 寫入: ${parsed.memory.substring(0, 20)}...`);
             await brain.memorize(parsed.memory, { type: 'fact', timestamp: Date.now() });
         }
 
-        // 3. 回覆 (Reply) - 優先顯示，降低延遲感
         if (parsed.reply) {
             await ctx.reply(parsed.reply);
         }
 
-        // 4. 行動 (Action)
         if (parsed.actions.length > 0) {
             const observation = await controller.runSequence(ctx, parsed.actions);
-            
-            // 5. 閉環反饋 (Loop)
             if (observation) {
-                // 如果 ctx 有 sendTyping 才執行 (Autonomy 也可以有空的 sendTyping)
                 if (ctx.sendTyping) await ctx.sendTyping();
-                
                 const feedbackPrompt = `[System Observation]\n${observation}\n\nPlease reply to user naturally using [GOLEM_REPLY].`;
                 const finalRes = await brain.sendMessage(feedbackPrompt);
-                
-                // 遞迴呼叫：處理反饋後的二次回應 (例如：執行失敗後的道歉，或成功後的總結)
                 await this.dispatch(ctx, finalRes, brain, controller);
             }
         }
@@ -997,6 +960,80 @@ class NodeRouter {
         }
         if (text.startsWith('/patch') || text.includes('優化代碼')) return false;
         return false;
+    }
+}
+
+// ============================================================
+// 🚦 Conversation Manager (隊列與防抖系統)
+// ============================================================
+class ConversationManager {
+    constructor(brain, neuroShunterClass, controller) {
+        this.brain = brain;
+        this.NeuroShunter = neuroShunterClass;
+        this.controller = controller;
+
+        this.queue = [];
+        this.isProcessing = false;
+
+        this.buffer = "";
+        this.bufferTimer = null;
+        this.bufferCtx = null;
+        this.DEBOUNCE_MS = 1500; // 1.5秒內視為同一則訊息
+    }
+
+    async enqueue(ctx, text) {
+        this.bufferCtx = ctx;
+        this.buffer = this.buffer ? `${this.buffer}\n${text}` : text;
+
+        console.log(`⏳ [Queue] 收到片段: "${text.substring(0, 15)}..." -> 目前緩衝區長度: ${this.buffer.length}`);
+
+        if (this.bufferTimer) clearTimeout(this.bufferTimer);
+        this.bufferTimer = setTimeout(() => {
+            this._commitToQueue();
+        }, this.DEBOUNCE_MS);
+    }
+
+    _commitToQueue() {
+        if (!this.buffer) return;
+        const fullText = this.buffer;
+        const currentCtx = this.bufferCtx;
+
+        this.buffer = "";
+        this.bufferCtx = null;
+        this.bufferTimer = null;
+
+        console.log(`📦 [Queue] 訊息封包完成，加入隊列。內容: "${fullText.substring(0, 20)}..."`);
+        this.queue.push({ ctx: currentCtx, text: fullText });
+        this._processQueue();
+    }
+
+    async _processQueue() {
+        if (this.isProcessing || this.queue.length === 0) return;
+        this.isProcessing = true;
+        const task = this.queue.shift();
+
+        try {
+            console.log(`🚀 [Queue] 開始處理訊息...`);
+            await task.ctx.sendTyping();
+
+            // RAG 記憶讀取 (移至此處，確保基於完整語句)
+            const memories = await this.brain.recall(task.text);
+            let finalInput = task.text;
+            if (memories.length > 0) {
+                finalInput = `【相關記憶】\n${memories.map(m => `• ${m.text}`).join('\n')}\n---\n${finalInput}`;
+            }
+
+            const raw = await this.brain.sendMessage(finalInput);
+            await this.NeuroShunter.dispatch(task.ctx, raw, this.brain, this.controller);
+
+        } catch (e) {
+            console.error("❌ [Queue] 處理失敗:", e);
+            await task.ctx.reply(`⚠️ 處理錯誤: ${e.message}`);
+        } finally {
+            this.isProcessing = false;
+            // 稍微延遲，避免連續操作太快
+            setTimeout(() => this._processQueue(), 500);
+        }
     }
 }
 
@@ -1082,29 +1119,23 @@ class AutonomyManager {
             else await this.performSpontaneousChat();
         } catch (e) { console.error("自由意志執行失敗:", e.message); }
     }
-
-    // [Fix Bug 4] 透過 getAdminContext 建立虛擬環境，讓 Autonomy 也能執行 Action
     async getAdminContext() {
         const fakeCtx = {
             isAdmin: true,
             platform: 'autonomy',
             reply: async (msg, opts) => await this.sendNotification(msg),
-            sendTyping: async () => {} // Autonomy 不需要打字狀態
+            sendTyping: async () => { }
         };
         return fakeCtx;
     }
-
     async run(taskName, type) {
         console.log(`🤖 自主行動: ${taskName}`);
         const prompt = `[系統指令: ${type}]\n任務：${taskName}\n請執行並使用標準格式回報。`;
         const raw = await this.brain.sendMessage(prompt);
-        // ✨ 關鍵修正：透過 NeuroShunter 統一分流
         await NeuroShunter.dispatch(await this.getAdminContext(), raw, this.brain, controller);
     }
-
     async performNewsChat() { await this.run("上網搜尋「科技圈熱門話題」或「全球趣聞」，挑選一件分享給主人。要有個人觀點，像朋友一樣聊天。", "NewsChat"); }
     async performSpontaneousChat() { await this.run("主動社交，傳訊息給主人。語氣自然，符合當下時間。", "SpontaneousChat"); }
-    
     async performSelfReflection(triggerCtx = null) {
         const currentCode = Introspection.readSelf();
         const advice = memory.getAdvice();
@@ -1123,7 +1154,6 @@ class AutonomyManager {
             else if (tgBot && CONFIG.ADMIN_IDS[0]) { await tgBot.sendMessage(CONFIG.ADMIN_IDS[0], msgText, options); await tgBot.sendDocument(CONFIG.ADMIN_IDS[0], testFile); }
         }
     }
-    
     async sendNotification(msgText) {
         if (!msgText) return;
         if (tgBot && CONFIG.ADMIN_IDS[0]) await tgBot.sendMessage(CONFIG.ADMIN_IDS[0], msgText);
@@ -1141,51 +1171,55 @@ const brain = new GolemBrain();
 const controller = new TaskController();
 const autonomy = new AutonomyManager(brain);
 
+// ✨ 新增：初始化隊列管理器
+const convoManager = new ConversationManager(brain, NeuroShunter, controller);
+
 (async () => {
     if (process.env.GOLEM_TEST_MODE === 'true') { console.log('🚧 GOLEM_TEST_MODE active.'); return; }
     await brain.init();
     autonomy.start();
-    console.log('📡 Golem v8.5 (Titan Final Edition) is Online.');
+    console.log('📡 Golem v8.5 (Titan Queue Edition) is Online.');
     if (dcClient) dcClient.login(CONFIG.DC_TOKEN);
 })();
 
-// --- 統一事件處理 ---
+// --- 統一事件處理 (已更新為 Queue 模式) ---
 async function handleUnifiedMessage(ctx) {
     if (!ctx.text && !ctx.getAttachment()) return;
     if (!ctx.isAdmin) return;
     if (await NodeRouter.handle(ctx, brain)) return;
     if (global.pendingPatch && ['ok', 'deploy', 'y', '部署'].includes(ctx.text.toLowerCase())) return executeDeploy(ctx);
     if (global.pendingPatch && ['no', 'drop', 'n', '丟棄'].includes(ctx.text.toLowerCase())) return executeDrop(ctx);
-    
-    // Patch Request
+
+    // Patch Request (優先處理，不進隊列)
     if (ctx.text.startsWith('/patch') || ctx.text.includes('優化代碼')) {
         await autonomy.performSelfReflection(ctx);
         return;
     }
 
-    // [Round 1: 接收指令]
+    // [Round 1: 接收 & 預處理]
+    // 雖然真正送出會延遲，但先顯示 typing 讓使用者安心
     await ctx.sendTyping();
+
     try {
         let finalInput = ctx.text;
         const attachment = await ctx.getAttachment();
+
+        // 圖片分析比較耗時，且通常不需要防抖合併，所以這裡先做分析
+        // 當然，如果使用者連傳三張圖，這部分會並發執行，但最後 enqueue 會是順序的
         if (attachment) {
             await ctx.reply("👁️ 正在透過 OpticNerve 分析檔案...");
             const apiKey = brain.doctor.keyChain.getKey();
             if (apiKey) {
                 const analysis = await OpticNerve.analyze(attachment.url, attachment.mimeType, apiKey);
-                finalInput = `【系統通知：視覺訊號】\n檔案類型：${attachment.mimeType}\n分析報告：\n${analysis}\n使用者訊息：${ctx.text || ""}\n請根據分析報告回應，若有程式碼錯誤請修復。`;
+                finalInput = `【系統通知：視覺訊號】\n檔案類型：${attachment.mimeType}\n分析報告：\n${analysis}\n使用者訊息：${ctx.text || ""}\n請根據分析報告回應。`;
             }
         }
+
         if (!finalInput && !attachment) return;
 
-        // RAG
-        const memories = await brain.recall(ctx.text || "context");
-        if (memories.length > 0) finalInput = `【相關記憶】\n${memories.map(m => `• ${m.text}`).join('\n')}\n---\n${finalInput}`;
-
-        const raw = await brain.sendMessage(finalInput);
-
-        // ✨ 統一入口：User 與 Autonomy 走同一條路 (NeuroShunter)
-        await NeuroShunter.dispatch(ctx, raw, brain, controller);
+        // ✨ 關鍵修改：不再直接 brain.sendMessage，而是交給隊列
+        // RAG 記憶檢索也移入隊列處理時才做，確保是針對「合併後的完整訊息」找記憶
+        await convoManager.enqueue(ctx, finalInput);
 
     } catch (e) { console.error(e); await ctx.reply(`❌ 錯誤: ${e.message}`); }
 }
@@ -1196,7 +1230,7 @@ async function handleUnifiedCallback(ctx, actionData) {
     if (actionData === 'PATCH_DROP') return executeDrop(ctx);
     if (actionData === 'SYSTEM_FORCE_UPDATE') return SystemUpgrader.performUpdate(ctx);
     if (actionData === 'SYSTEM_UPDATE_CANCEL') return ctx.reply("已取消更新操作。");
-    
+
     if (actionData.includes(':')) {
         const [action, taskId] = actionData.split(':');
         const task = pendingTasks.get(taskId);
@@ -1212,8 +1246,6 @@ async function handleUnifiedCallback(ctx, actionData) {
             if (observation) {
                 const feedbackPrompt = `[System Observation]\nUser approved actions.\nResult:\n${observation}\nReport to user using [GOLEM_REPLY].`;
                 const finalResponse = await brain.sendMessage(feedbackPrompt);
-                
-                // Callback 也要走分流，確保一致性
                 await NeuroShunter.dispatch(ctx, finalResponse, brain, controller);
             }
         }
