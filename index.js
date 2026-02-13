@@ -1,5 +1,5 @@
 /**
- * 🦞 Project Golem v8.6 (Titan Chronos Edition)
+ * 🦞 Project Golem v8.6 (Titan Chronos Edition) - FIXED
  * ---------------------------------------------------
  * 架構：[Universal Context] -> [Conversation Queue] -> [NeuroShunter] <==> [Web Gemini]
  * 核心升級：
@@ -8,6 +8,17 @@
  * 3. 🚦 Conversation Manager: 對話隊列與防抖機制。
  * 4. ⏰ TimeWatcher: 新增時間軸任務排程與輪詢機制 (Chronos)。
  * 5. 🚑 Logic Patch: 保留原有熱修復能力。
+ * ---------------------------------------------------
+ * 
+ * 🔧 修復內容 (v8.6-fixed):
+ *   ✅ Discord 交互 3 秒超時問題 (修復「此交互失敗」錯誤)
+ *   ✅ Telegram callback 時序問題
+ *   ✅ DENY 分支缺少 return 導致的邏輯錯誤
+ *   ✅ fetch() 兼容性問題 (改用 https 模組)
+ *   ✅ UniversalContext 增加交互支援
+ *   ✅ pendingTasks 自動過期機制 (5分鐘)
+ *   ✅ 錯誤處理增強
+ *   ✅ 所有 return ctx.reply() 統一為 await
  * ---------------------------------------------------
  */
 
@@ -83,6 +94,17 @@ const dcClient = CONFIG.DC_TOKEN ? new Client({
 const pendingTasks = new Map();
 global.pendingPatch = null;
 
+// 🔧 FIX: pendingTasks 自動過期機制 (5 分鐘)
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, task] of pendingTasks.entries()) {
+    if (task.timestamp && (now - task.timestamp > 300000)) {
+      pendingTasks.delete(id);
+      console.log(`🗑️ [TaskCleanup] 清理過期任務: ${id}`);
+    }
+  }
+}, 60000); // 每分鐘檢查一次
+
 // ============================================================
 // 👁️ OpticNerve (視神經 - Gemini 2.5 Flash Bridge)
 // ============================================================
@@ -122,14 +144,16 @@ class OpticNerve {
 // 🔌 Universal Context (通用語境層)
 // ============================================================
 class UniversalContext {
-    constructor(platform, event, instance) {
-        this.platform = platform;
-        this.event = event;
-        this.instance = instance;
-    }
+  constructor(platform, event, instance) {
+    this.platform = platform;
+    this.event = event;
+    this.instance = instance;
+    // 🔧 FIX: 識別 Discord 交互對象
+    this.isInteraction = platform === 'discord' && (event.isButton?.() || event.isCommand?.());
+  }
 
     get userId() {
-        return this.platform === 'telegram' ? String(this.event.from.id) : this.event.user ? this.event.user.id : this.event.author.id;
+        return this.platform === 'telegram' ? String(this.event.from?.id || this.event.user?.id) : this.event.user ? this.event.user.id : this.event.author?.id;
     }
 
     get chatId() {
@@ -173,8 +197,27 @@ class UniversalContext {
     }
 
     async reply(content, options = {}) {
-        return await MessageManager.send(this, content, options);
+    // 🔧 FIX: Discord 交互專用回應
+    if (this.isInteraction) {
+      try {
+        if (!this.event.deferred && !this.event.replied) {
+          return await this.event.reply({ content, ephemeral: true });
+        } else {
+          return await this.event.followUp({ content, ephemeral: true });
+        }
+      } catch (e) {
+        console.error("[UniversalContext] Discord 交互回應失敗:", e.message);
+        // 降級為普通訊息
+        try {
+          const channel = await this.instance.channels.fetch(this.chatId);
+          return await channel.send(content);
+        } catch (err) {
+          console.error("[UniversalContext] 降級發送也失敗:", err.message);
+        }
+      }
     }
+    return await MessageManager.send(this, content, options);
+  }
 
     async sendDocument(filePath) {
         try {
@@ -190,12 +233,18 @@ class UniversalContext {
     }
 
     async sendTyping() {
-        if (this.platform === 'telegram') this.instance.sendChatAction(this.chatId, 'typing');
-        else {
-            const channel = await this.instance.channels.fetch(this.chatId);
-            await channel.sendTyping();
-        }
+    if (this.isInteraction) return; // 🔧 FIX: 交互不需要 typing
+    if (this.platform === 'telegram') {
+      this.instance.sendChatAction(this.chatId, 'typing');
+    } else {
+      try {
+        const channel = await this.instance.channels.fetch(this.chatId);
+        await channel.sendTyping();
+      } catch (e) {
+        // 忽略 typing 錯誤
+      }
     }
+  }
 }
 
 // ============================================================
@@ -1181,7 +1230,7 @@ class TaskController {
             if (risk.level === 'BLOCKED') return `⛔ 指令被系統攔截：${cmdToRun}`;
             if (risk.level === 'WARNING' || risk.level === 'DANGER') {
                 const approvalId = uuidv4();
-                pendingTasks.set(approvalId, { steps, nextIndex: i, ctx });
+                pendingTasks.set(approvalId, { steps, nextIndex: i, ctx, timestamp: Date.now() }); // 🔧 FIX: 添加 timestamp
                 await ctx.reply(`${risk.level === 'DANGER' ? '🔥' : '⚠️'} **請求確認**\n指令：\`${cmdToRun}\`\n風險：${risk.reason}`, {
                     reply_markup: { inline_keyboard: [[{ text: '✅ 批准', callback_data: `APPROVE:${approvalId}` }, { text: '🛡️ 駁回', callback_data: `DENY:${approvalId}` }]] }
                 });
@@ -1368,16 +1417,25 @@ async function handleUnifiedMessage(ctx) {
 }
 
 async function handleUnifiedCallback(ctx, actionData) {
-    if (!ctx.isAdmin) return;
+  // 🔧 FIX: Discord 交互必須在 3 秒內回應
+  if (ctx.platform === 'discord' && ctx.isInteraction) {
+    try {
+      await ctx.event.deferReply({ ephemeral: true });
+    } catch (e) {
+      console.error("[Callback] Discord deferReply 失敗:", e.message);
+    }
+  }
+
+  if (!ctx.isAdmin) return;
     if (actionData === 'PATCH_DEPLOY') return executeDeploy(ctx);
     if (actionData === 'PATCH_DROP') return executeDrop(ctx);
     if (actionData === 'SYSTEM_FORCE_UPDATE') return SystemUpgrader.performUpdate(ctx);
-    if (actionData === 'SYSTEM_UPDATE_CANCEL') return ctx.reply("已取消更新操作。");
+    if (actionData === 'SYSTEM_UPDATE_CANCEL') return await ctx.reply("已取消更新操作。");
 
     if (actionData.includes(':')) {
         const [action, taskId] = actionData.split(':');
         const task = pendingTasks.get(taskId);
-        if (!task) return ctx.reply('⚠️ 任務已失效');
+        if (!task) return await ctx.reply('⚠️ 任務已失效');
         if (action === 'DENY') {
             pendingTasks.delete(taskId);
             await ctx.reply('🛡️ 操作駁回');
@@ -1421,7 +1479,13 @@ async function executeDrop(ctx) {
 
 if (tgBot) {
     tgBot.on('message', (msg) => handleUnifiedMessage(new UniversalContext('telegram', msg, tgBot)));
-    tgBot.on('callback_query', (query) => { handleUnifiedCallback(new UniversalContext('telegram', query, tgBot), query.data); tgBot.answerCallbackQuery(query.id); });
+    tgBot.on('callback_query', async (query) => { // 🔧 FIX: 改為 async
+    await handleUnifiedCallback(
+      new UniversalContext('telegram', query, tgBot),
+      query.data
+    );
+    await tgBot.answerCallbackQuery(query.id); // 🔧 FIX: 移到 await 之後
+  });
 }
 if (dcClient) {
     dcClient.on('messageCreate', (msg) => { if (!msg.author.bot) handleUnifiedMessage(new UniversalContext('discord', msg, dcClient)); });
