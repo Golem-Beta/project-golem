@@ -1232,27 +1232,27 @@ class TaskController {
             }
             if (risk.level === 'BLOCKED') return `⛔ 指令被系統攔截：${cmdToRun}`;
 if (risk.level === 'WARNING' || risk.level === 'DANGER') {
-  const approvalId = uuidv4();
-  pendingTasks.set(approvalId, { 
-    steps, 
-    nextIndex: i, 
-    ctx, 
-    timestamp: Date.now() 
-  });
-  
-  await ctx.reply(
-    `⚠️ ${risk.level === 'DANGER' ? '🔴 危險指令' : '🟡 警告'}\n\`${cmdToRun}\`\n${risk.reason}`,
-    {
-      reply_markup: {
-        inline_keyboard: [[
-          { text: '✅ 批准', callback_ `APPROVE_${approvalId}` },
-          { text: '❌ 拒絕', callback_ `DENY_${approvalId}` }
-        ]]
-      }
-    }
-  );
-  return null;
-}
+                const approvalId = uuidv4();
+                pendingTasks.set(approvalId, {
+                    steps,
+                    nextIndex: i,
+                    ctx,
+                    timestamp: Date.now()
+                });
+
+                await ctx.reply(
+                    `⚠️ ${risk.level === 'DANGER' ? '🔴 危險指令' : '🟡 警告'}\n\`${cmdToRun}\`\n${risk.reason}`,
+                    {
+                        reply_markup: {
+                            inline_keyboard: [[
+                                { text: '✅ 批准', callback_data: `APPROVE_${approvalId}` },
+                                { text: '❌ 拒絕', callback_data: `DENY_${approvalId}` }
+                            ]]
+                        }
+                    }
+                );
+                return null;
+            }
 
             try {
                 if (!this.internalExecutor) this.internalExecutor = new Executor();
