@@ -1039,11 +1039,14 @@ class NeuroShunter {
             // [Chronos Update] 攔截排程指令
             const normalActions = [];
             for (const act of parsed.actions) {
-                if (act.action === 'schedule') {
+               if (act.action === 'schedule') {
                     if (brain.memoryDriver.addSchedule) {
-                        console.log(`📅 [Chronos] 新增排程: ${act.task} @ ${act.time}`);
-                        await brain.memoryDriver.addSchedule(act.task, act.time);
-                        await ctx.reply(`⏰ 已設定排程：${act.task} (於 ${act.time} 執行)`);
+                        // 🛠️ [Fix] 強制轉為 UTC 標準時間，解決 +08:00 造成的不響問題
+                        const safeTime = new Date(act.time).toISOString();
+
+                        console.log(`📅 [Chronos] 新增排程: ${act.task} @ ${safeTime}`);
+                        await brain.memoryDriver.addSchedule(act.task, safeTime);
+                        await ctx.reply(`⏰ 已設定排程：${act.task} (於 ${safeTime} 執行)`);
                     } else {
                         await ctx.reply("⚠️ 當前記憶模式不支援排程功能。");
                     }
@@ -1450,8 +1453,9 @@ async function handleUnifiedCallback(ctx, actionData) {
     if (actionData === 'SYSTEM_FORCE_UPDATE') return SystemUpgrader.performUpdate(ctx);
     if (actionData === 'SYSTEM_UPDATE_CANCEL') return await ctx.reply("已取消更新操作。");
 
-    if (actionData.includes(':')) {
-        const [action, taskId] = actionData.split(':');
+    // 🛠️ [Fix] 這裡原本是檢查冒號 ':'，請改成檢查底線 '_' 以匹配發送端
+    if (actionData.includes('_')) {
+        const [action, taskId] = actionData.split('_');
         const task = pendingTasks.get(taskId);
         if (!task) return await ctx.reply('⚠️ 任務已失效');
         if (action === 'DENY') {
