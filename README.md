@@ -208,6 +208,10 @@ npm start dashboard
 
 *(按 `F12` 可將介面分離 Detach，讓程式繼續在背景運作)*
 
+* **Web UI (v8.6 New)**:
+  啟動 Dashboard 後，可透過瀏覽器訪問：[http://localhost:3000](http://localhost:3000)
+  (包含即時狀態、排程監控與系統日誌)
+
 ---
 
 ## 📖 生活化情境展示
