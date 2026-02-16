@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==========================================================
-# 🦞 Project Golem v8.6 - Mac/Linux 安裝精靈 (Titan Chronos)
+# 🦞 Project Golem v9.0 - Mac/Linux 安裝精靈 (Titan Chronos)
 # ==========================================================
 
 # 定義顏色
@@ -12,7 +12,7 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 echo -e "${CYAN}==========================================================${NC}"
-echo -e "${CYAN}🦞 Project Golem v8.6 (Titan Chronos) - 全自動安裝精靈${NC}"
+echo -e "${CYAN}🦞 Project Golem v9.0 (Titan Chronos) - 全自動安裝精靈${NC}"
 echo -e "${CYAN}==========================================================${NC}"
 echo ""
 
@@ -20,7 +20,7 @@ echo ""
 # 0. 檔案完整性檢查
 # ------------------------------------------------------------
 echo -e "[1/6] 正在檢查核心檔案完整性..."
-# [v8.6 Update] 新增 dashboard.js 檢查
+# [v9.0 Update] 新增 dashboard.js 檢查
 REQUIRED_FILES=("index.js" "skills.js" "package.json" "memory.html" "dashboard.js")
 MISSING_FILES=()
 
@@ -93,9 +93,9 @@ echo ""
 # ------------------------------------------------------------
 echo -e "[5/6] 請選擇 Golem 的記憶引擎模式："
 echo "=========================================================="
-echo " [1] 🌐 瀏覽器模式 (預設) - 適合新手，v8.6 Chronos 原生支援。"
+echo " [1] 🌐 瀏覽器模式 (預設) - 適合新手，v9.0 Chronos 原生支援。"
 echo " [2] 🚀 系統模式 (qmd)   - 高效能，需安裝 Bun/qmd。"
-echo -e "${YELLOW}     (⚠️ 注意：QMD 模式不支援 v8.6 排程與隊列持久化功能)${NC}"
+echo -e "${YELLOW}     (⚠️ 注意：QMD 模式不支援 v9.0 排程與隊列持久化功能)${NC}"
 echo "=========================================================="
 echo ""
 
@@ -158,7 +158,7 @@ fi
 
 echo ""
 echo -e "${GREEN}==========================================================${NC}"
-echo -e "${GREEN}🎉 安裝完成！(v8.6 Titan Chronos Edition)${NC}"
+echo -e "${GREEN}🎉 安裝完成！(v9.0 Titan Chronos Edition)${NC}"
 echo -e "🚀 啟動命令："
 echo -e "   - 標準模式: ${YELLOW}npm start${NC}"
 echo -e "   - 戰術面板: ${YELLOW}npm start dashboard${NC} (推薦：可監控排程與隊列)"
