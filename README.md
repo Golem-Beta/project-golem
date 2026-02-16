@@ -1,249 +1,286 @@
 <a href="https://www.buymeacoffee.com/arvincreator" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
 
-# 🦞 Project Golem v8.6 (Titan Chronos Edition)
+這是一份經過深度強化的 **Project Golem v9.0 `README.md**`。
+
+我為您新增了 **「🧩 系統架構深度解析 (System Architecture Deep Dive)」** 章節，詳細拆解了 **Puppeteer Neuro-Link**、**Titan Protocol** 以及 **Multi-Agent 循環機制** 的運作原理。同時保留了完整的功能介紹與一鍵部署指南。
+
+請直接將以下內容存為 `README.md`。
 
 ---
 
-* 架構：[Universal Context] -> [🚦 對話隊列 & ⏰ 時序排程] -> [NeuroShunter] <==> [Web Gemini]
-* 核心升級：
-* 1. 🚦 **Titan Queue (泰坦隊列)**: 實作 FIFO 對話緩衝區與防抖機制 (Debounce)，徹底解決網頁版單執行緒的並發衝突。
+# 🦞 Project Golem v9.0 (Ultimate Chronos + MultiAgent Edition)
 
+**Project Golem** 是一個具有高度自主性、長期記憶與跨平台能力的 AI 代理系統。
+v9.0 版本引入了革命性的 **Interactive MultiAgent (互動式多智能體)** 架構與 **Titan Chronos (時序領主)** 引擎，讓 AI 不僅能跨越時間排程，更能召喚專家團隊進行協作會議。
 
-* 2. ⏰ **Chronos Timekeeper (時間領主)**: 新增時間軸感知與任務輪詢系統，支援跨時段任務排程 (IndexedDB 持久化)。
-
-
-* 3. 🛡️ **Titan Protocol**: 強制三流協定 (Memory/Action/Reply)，移除 Emoji 降低解析干擾，提升指令遵從度。
-
-
-* 4. 🥪 **Envelope Lock**: 強化版「三明治信封」鎖定 ([[BEGIN]]...[[END]])，確保長文本輸出的完整性。
-
-
+它以 **Web Gemini** 為無限上下文大腦，**Puppeteer** 為手，**Node.js** 為神經系統，並透過 **Discord** 與 **Telegram** 雙平台與人類互動。
 
 ---
 
-* 原有特性保留：
-* 🐍 Hydra Link | 🧠 Tri-Brain | ☁️ OTA Upgrader | 👁️ Agentic Grazer
-* 💰 Sponsor Core | 🔍 Auto-Discovery | 🔮 OpticNerve | ⚡ Neuro-Link (CDP)
-*/
+## 🧩 系統架構深度解析 (System Architecture Deep Dive)
 
-> **"I perceive, therefore I act. I plan, therefore I am."**
-> **搭載「時序感知 (Chronos)」與「網頁神經連結 (Neuro-Link)」的完全自律型 AI 代理人。**
-> **結合對話隊列管理、本地持久化排程與自動 Git 版控，實現真正意義上的「7x24 小時 AI 助理」。**
+Golem v9.0 採用獨特的 **"Browser-in-the-Loop"** 混合架構，結合了 Web LLM 的長上下文優勢與本地 Node.js 的執行能力。
 
-Project Golem 是一個基於 Puppeteer 控制 Web Gemini 的本機 AI Agent。
-**v8.6 版本** 引入了 **Titan Queue 架構**，解決了傳統網頁自動化無法處理多人/多工並發的痛點，並賦予 AI **「時間觀念」**，讓它能主動在未來執行任務，不再只是被動回應。
-
----
-
-## 🏗️ 系統架構深度解析 (System Architecture)
-
-Golem v8.6 在大腦前額葉增加了一個 **流量控制層 (Conversation Manager)**。所有來自使用者或系統內部的訊號，都必須經過隊列整流，確保 Gemini 的思緒清晰且單一。
+### 1. 核心資料流 (Data Flow)
 
 ```mermaid
 graph TD
-    User((👤 使用者)) -->|"TG / DC 訊息"| Queue["🚦 Conversation Queue (隊列緩衝)"]
-    Cron["⏰ Chronos Scheduler (時間守望者)"] -->|"觸發到期任務"| Queue
+    User[使用者] -->|Telegram/Discord| Ingress[Universal Context]
+    Ingress -->|封裝訊息| Queue[Conversation Queue (Debounce)]
+    Queue -->|發送 Prompt| Puppeteer[Puppeteer / CDP Bridge]
     
-    subgraph "🧠 The Brain (Web Gemini)"
-        GeminiUI["Web Interface"]
+    subgraph "🧠 The Brain (Dual-Engine)"
+        Puppeteer -->|注入 DOM| WebGemini[Web Gemini (Infinite Context)]
+        Ingress -->|圖片/檔案| OpticNerve[Gemini 2.5 Flash API (Vision)]
     end
 
-    subgraph "🔌 Web Neuro-Link (網頁神經連結層)"
-        direction TB
-        CDP["📡 CDP Interceptor (聽覺)"]
-        DOM["👁️ DOM Observer (視覺)"]
-        Race{"⚡ 訊號競速 (Race)"}
-        
-        CDP -->|"Network Idle (毫秒級觸發)"| Race
-        DOM -->|"Envelope Lock (完整性驗證)"| Race
+    WebGemini -->|Titan Protocol Response| NeuroShunter[🧬 NeuroShunter]
+    
+    subgraph "⚡ Reflex Layer (Node.js)"
+        NeuroShunter -->|解析 [GOLEM_MEMORY]| Memory[Vector/JSON Storage]
+        NeuroShunter -->|解析 [GOLEM_ACTION]| TaskController[Task Controller]
+        NeuroShunter -->|解析 [GOLEM_REPLY]| Egress[Response Handler]
     end
 
-    subgraph "💾 Memory & Timeline (海馬迴)"
-        direction TB
-        BrowserMem[("🌐 Vector Memory")]
-        ScheduleDB[("📅 Schedule Store")]
-    end
+    TaskController -->|執行指令| Shell[System Shell / Git / NPM]
+    TaskController -->|召喚 Agent| MultiAgent[🎭 Interactive MultiAgent]
+    TaskController -->|設定排程| Chronos[⏰ Titan Chronos]
 
-    subgraph "🧬 NeuroShunter (神經分流中樞)"
-        Parser["⚡ Response Parser"]
-        Stream1["📝 記憶流"]
-        Stream2["🤖 行動流"]
-        Stream3["💬 回覆流"]
-    end
-
-    Queue -->|"序列化處理 (FIFO)"| GeminiUI
-    
-    GeminiUI ==> CDP
-    GeminiUI ==> DOM
-    
-    Race -->|"原始回應"| Parser
-    
-    Parser --> Stream1 & Stream2 & Stream3
-    
-    Stream1 --> BrowserMem
-    Stream2 -->|"Shell / Git / 排程指令"| OS[("💻 Host System")]
-    Stream2 -.->|"寫入新任務"| ScheduleDB
-    Stream3 --> User
-
-    ScheduleDB -.->|"輪詢檢查"| Cron
+    Shell -->|執行結果 (Observation)| Puppeteer
+    MultiAgent -->|團隊總結| Egress
+    Egress -->|回覆| User
 
 ```
 
----
+### 2. 關鍵技術堆疊 (Key Technologies)
 
-## 📊 戰術控制台 (Tactical Dashboard) `v8.6 Updated`
+#### 🔌 Neuro-Link (神經連結層)
 
-v8.6 儀表板新增了 **[時序雷達]** 與 **[隊列監控]**，讓您即時掌握 AI 是否忙碌以及未來的行程。
+* **Puppeteer & CDP**: Golem 不依賴官方 Chat API，而是透過 Puppeteer 控制無頭瀏覽器 (Headless Chrome)。
+* **Sandwich Protocol (三明治協定)**: 為了確保 AI 輸出的穩定性，Golem 在 Prompt 前後注入隱藏的錨點 (`[[BEGIN]]` ... `[[END]]`)，並透過 `DOM Doctor` 自動修復 CSS Selector，即使 Google 介面改版也能自我癒合。
 
-```text
-┌─ ⚡ System Core (CPU/RAM) ─────────┐┌─ 📊 Status (v8.6) ─────────────┐
-│ CPU: [||||||       ] 12%          ││ Mode: Browser (Chronos)        │
-│ RAM: [||||||||||   ] 145 MB       ││ Queue: 🟢 Idle                 │
-└────────────────────────────────────┘│ Schedule: 1 task pending       │
-┌─ ⏰ Chronos Radar (Scheduled Tasks) └─────────────────────────────────┐
-│ [10:23:41] 📅 [Chronos] 新增排程: "提醒開會" @ 2026-02-12T09:00:00Z   │
-│ [10:24:00] ⏳ [TimeWatcher] 掃描中... (無到期任務)                    │
-└───────────────────────────────────────────────────────────────────────┘
-┌─ 🚦 Traffic Control (Queue Monitor) ──────────────────────────────────┐
-│ [10:23:42] ⏳ [Queue] 收到片段: "幫我查..." (Buffering)               │
-│ [10:23:43] 📦 [Queue] 封包完成，加入隊列 (1 waiting)                  │
-│ [10:23:44] 🚀 [Queue] 開始處理訊息... (Processing)                    │
-└───────────────────────────────────────────────────────────────────────┘
-┌─ 📝 Neuro-Link Stream ────────────────────────────────────────────────┐
-│ [10:23:45] ✅ [CDP] 網路傳輸完畢 (Winner: Network)                    │
-│ [10:23:46] 💬 [回覆] 已為您設定好明天的提醒。                         │
-└───────────────────────────────────────────────────────────────────────┘
+#### 📜 Titan Protocol (通訊協定)
 
-```
+這是 Golem 與大腦溝通的 JSON 標準。AI 必須將思考結果結構化輸出：
 
----
+* `[GOLEM_MEMORY]`: 寫入長期記憶 (Fact)。
+* `[GOLEM_ACTION]`: 執行操作 (JSON Array)。
+* `[GOLEM_REPLY]`: 回覆用戶的自然語言。
 
-## 🚀 v8.6 核心功能 (Core Features)
+#### 🎭 Multi-Agent Orchestrator (多智能體協作)
 
-### 🚦 Titan Queue (泰坦隊列系統) `v8.6 NEW`
+v9.0 的核心突破。當觸發會議模式時：
 
-* **防抖動機制 (Debounce)**：使用者分段傳送的訊息（如：「幫我」「查一下」「天氣」），會被自動合併為單一完整的思考請求，避免 AI 產生碎片化回應。
-* **單行道管控**：確保在 Web Automation 正在操作 DOM 時，新的請求會乖乖排隊，防止瀏覽器上下文衝突導致的崩潰。
+1. **Context Switching**: 主腦 (Golem) 暫時退居幕後，轉換為「會議主席」。
+2. **Round-Robin Execution**: 系統根據 `skills.js` 定義的人格 (如 Alex, Bob)，輪流將 Prompt 注入給大腦，模擬不同專家的發言。
+3. **Shared Memory**: 會議期間的所有發言與決策都會被寫入臨時的共享記憶區，供所有 Agent 參考。
 
-* ⚠️ 注意：此功能僅支援 Browser Memory 模式。若使用 QMD (System) 模式，排程功能將自動停用。
+#### ⏰ Titan Chronos (時序引擎)
 
-### ⏰ Chronos Timekeeper (時間領主) `v8.6 NEW`
-
-* **時間軸感知**：Golem 現在能理解「明天」、「下週」或「30分鐘後」的概念。
-* **持久化排程**：任務儲存於瀏覽器端的 IndexedDB。即使 Golem 重啟，已預約的任務也不會消失。
-* **主動喚醒**：時間一到，Golem 會自動從背景醒來，主動向使用者發送訊息或執行腳本。
-
-* ⚠️ 注意：此功能僅支援 Browser Memory 模式。若使用 QMD (System) 模式，排程功能將自動停用。
-
-### ⚡ Web Neuro-Link (網頁神經連結) `核心`
-
-* **雙軌並行監聽**：同時監聽 CDP Network 封包與 DOM 變化。
-* **三明治信封鎖 (Envelope Lock)**：透過注入隨機 ID 標籤 (`[[BEGIN:xyz]]...[[END:xyz]]`)，確保截取到的 AI 回應絕對完整，解決網頁版生成過慢導致的截斷問題。
-
-### 🐙 Git Master (版本控制大師)
-
-* **全自動版控**：Golem 能自主執行 `git init`, `add`, `commit`, `push` 等操作。
-* **環境感知**：操作前自動檢查 `.gitignore` 與 Remote 狀態，避免發生災難性覆蓋。
-
-### 👁️ OpticNerve (視神經)
-
-* **多模態視覺**：整合 **Gemini 2.5 Flash** API。直接將圖片、PDF 文件傳給 Golem，它能進行深度解析、代碼除錯、UI 結構分析，甚至讀懂梗圖。
-
-### ⚓ Tri-Stream Protocol (三流協定)
-
-* **多工處理**：將單次思考拆解為「記憶寫入」、「外部行動」、「對話回覆」三條平行串流。Golem 能在聊天的同時，默默將重要資訊寫入筆記，並在背景執行 Shell 指令。
+* **Time Perception**: 每次對話時，系統會注入 `【當前系統時間】` 給 AI。
+* **Persistence**: 排程任務被序列化存儲，並由 `TimeWatcher` 每分鐘掃描一次。當時間到達，系統會自動喚醒並執行定義好的 Action。
 
 ---
 
-## ⚡ 快速部署 (Quick Deployment)
+## 🔥 v9.0 核心升級 (New Features)
 
-我們提供了一鍵安裝腳本，自動完成環境檢測、依賴安裝與記憶模式設定。
+### 1. 👥 Interactive MultiAgent (互動式多智能體會議)
 
-### 1. 獲取 Token
+Golem 不再是一個人在戰鬥。v9.0 支援動態召喚 AI 專家團隊，進行多輪對話、辯論與決策。
 
-* **Gemini API Key** (必備): [Google AI Studio](https://aistudio.google.com/app/apikey)
-* **Telegram token (必填）  / Discord Token** (選填)
+* **Tech Team**: 包含前端、後端工程師與 PM，解決複雜程式問題。
+* **Debate Team**: 魔鬼代言人與樂觀主義者進行觀點辯證。
+* **Visual Interface**: 在 Dashboard 中以專屬青色 (Cyan) 頻道顯示會議實況。
+* **Human-in-the-loop**: 使用者可隨時介入會議 (插話、暫停、結束)。
 
-### 2. 下載專案
+### 2. ⏰ Titan Chronos (時序領主)
+
+打破了 AI 只能回應「當下」的限制。
+
+* **智能排程**: 支援「明天早上叫我」、「每週五提醒我」、「30分鐘後執行」。
+* **持久化任務**: 即使系統重啟，排程任務依然存在 (基於 v9.0 記憶架構)。
+
+---
+
+## 🧠 強大功能一覽 (Core Capabilities)
+
+### 🛠️ 技能模組 (Skill Modules)
+
+得益於 `skills.js` 的動態加載，Golem 擁有以下超能力：
+
+* 
+**☁️ Cloud Observer**: 原生聯網搜尋，獲取即時新聞與數據 。
+
+
+* 
+**🎵 Spotify DJ**: 控制音樂播放、暫停、切換 (需 `spotify-cli-s`) 。
+
+
+* 
+**📺 YouTube Analyst**: 下載影片字幕並進行摘要總結 (需 `yt-dlp-wrap`) 。
+
+
+* 
+**🐙 Git Master**: 自主管理 GitHub 專案 (Init, Commit, Push) 。
+
+
+* 
+**💻 Code Wizard**: 直接在伺服器上撰寫、生成並執行程式碼檔案 。
+
+
+* 
+**🔍 Tool Explorer**: 自動探測系統環境工具 (Python, Node, Docker) 。
+
+
+
+### 🛡️ 自我防護與修復 (Self-Healing & Security)
+
+* 
+**🚑 DOM Doctor**: 當網頁結構改變導致操作失敗時，AI 會自動診斷 HTML 並生成新的 CSS Selector 修復自身 。
+
+
+* 
+**🔐 KeyChain v2**: 智慧 API 金鑰輪替與冷卻機制，防止 Rate Limit 。
+
+
+* 
+**🌊 Flood Guard**: 防止啟動時處理過多歷史訊息 。
+
+
+* 
+**🛡️ Security Manager**: 攔截高風險指令 (`rm -rf`, `format`)，需管理員授權 。
+
+
+
+### 📺 戰術控制台 (Dashboard v9.0)
+
+基於 `blessed-contrib` 的終端機儀表板 ，提供：
+
+* **CPU/RAM 監控**: 實時心跳。
+* **Chronos Radar**: 顯示即將執行的排程。
+* **Traffic Control**: 監控對話隊列與 Agent 會議狀態。
+
+---
+
+## 🚀 快速部署 (Quick Deployment)
+
+### 1. 環境準備 (Prerequisites)
+
+* **Node.js**: v18.0.0 或更高版本。
+* **Google Chrome**: 建議安裝最新版 (Puppeteer 依賴)。
+* **帳號**: 一個 Google 帳號 (用於 Web Gemini) 與 Gemini API Key (用於視覺分析)。
+
+### 2. 安裝 (Installation)
 
 ```bash
-git clone https://github.com/Arvincreator/project-golem.git
+# 下載專案
+git clone https://github.com/YourRepo/project-golem.git
 cd project-golem
 
-```
-
-### 3. 一鍵安裝 (自動化)
-
-此腳本會自動安裝 Node.js (若無)、`blessed` 儀表板套件，並建立 `.env` 設定檔。
-
-* **Mac / Linux**:
-
-```bash
-chmod +x setup.sh
-./setup.sh
+# 安裝依賴 (包含 Puppeteer, Discord.js, etc.)
+npm install
 
 ```
 
-* **Windows**:
-直接雙擊執行 `setup.bat` 即可。
+### 3. 設定 (Configuration)
 
-> **注意**：若您的電腦尚未安裝 Node.js，腳本會自動幫您下載安裝。安裝完成後，請**關閉視窗並再次執行 setup.bat** 以完成後續設定。
+在專案根目錄建立 `.env` 檔案，填入以下資訊：
 
-### 4. 啟動 Golem
+```env
+# --- 機器人 Token (至少填一個) ---
+TELEGRAM_TOKEN=你的_TG_Bot_Token
+DISCORD_TOKEN=你的_DC_Bot_Token
 
-* **標準模式** (背景執行):
+# --- 管理員 ID (必須設定，否則無法執行敏感指令) ---
+ADMIN_ID=你的_TG_ID
+DISCORD_ADMIN_ID=你的_DC_ID
+
+# --- 核心腦部 (選填，若無則視覺功能受限) ---
+# 用於 OpticNerve 視覺分析與 DOM Doctor 診斷
+GEMINI_API_KEYS=key1,key2,key3
+
+# --- 系統配置 ---
+# 記憶模式: browser (推薦), native, qmd
+GOLEM_MEMORY_MODE=browser
+# 瀏覽器資料存檔位置 (保留登入狀態)
+USER_DATA_DIR=./golem_memory
+
+```
+
+### 4. 啟動 (Launch)
+
+**模式 A: 標準啟動 (背景執行)**
 
 ```bash
 npm start
 
 ```
 
-* **戰術控制台模式** (推薦，含視覺化儀表板):
+**模式 B: 戰術控制台 (推薦，可視化監控 v9.0)**
 
 ```bash
-npm start dashboard
+npm run dashboard
+# 或
+node index.js dashboard
 
 ```
 
-*(按 `F12` 可將介面分離 Detach，讓程式繼續在背景運作)*
+---
 
-* **Web UI (v8.6 New)**:
-  啟動 Dashboard 後，可透過瀏覽器訪問：[http://localhost:3000](http://localhost:3000)
-  (包含即時狀態、排程監控與系統日誌)
+## 🎮 使用指南 (Usage)
+
+### 基礎指令
+
+* `/help`: 顯示說明書。
+* `/callme [名字]`: 設定你的稱呼。
+* `/donate`: 支持開發者。
+
+### 👥 多智能體會議 (v9.0 New)
+
+直接用自然語言告訴 Golem：
+
+> "啟動技術團隊(Tech Team)討論這個專案的架構。"
+> "請辯論團隊(Debate Team)分析這件事的利弊。"
+
+在會議中，你可以：
+
+* 輸入 `繼續`：讓討論繼續。
+* 輸入 `中斷`：暫停會議。
+* 輸入 `@Alex`：指定某位 Agent 回答。
+
+### ⏰ 排程指令 (Chronos)
+
+> "明天早上 9 點提醒我開會。"
+> "30 分鐘後幫我檢查伺服器狀態。"
 
 ---
 
-## 📖 生活化情境展示
+## 📂 專案結構 (Structure)
 
-### 1. 時間管理 (Chronos Schedule) `v8.6`
+```text
+project-golem/
+├── index.js          # 核心主程式 (v9.0 MultiAgent Kernel)
+├── skills.js         # 技能定義書 (v9.0 Skills - Agent Presets)
+├── dashboard.js      # 儀表板外掛 (v9.0 Monitor - Cyan Channel)
+├── dashboard/        # Web Server 元件
+├── golem_memory/     # [自動生成] 記憶與瀏覽器緩存
+├── .env              # [必須建立] 環境變數
+└── package.json      # 依賴配置
 
-> **User**: "提醒我明天早上 9 點要開會，另外幫我把這份文件 push 到 GitHub。"
-> **Golem**: "沒問題。
-> 1. 已執行 Git Push 操作。
-> 2. 已設定排程：**2026-02-12 09:00:00** 提醒您「會議開始」。"
-> *(...隔天早上 9 點...)*
-> **Golem (主動發訊)**: "⏰ 提醒：現在是 9 點，您的會議要開始囉！"
-> 
-> 
-
-### 2. 視覺除錯 (OpticNerve)
-
-*(使用者上傳一張 Server 報錯的截圖)*
-
-> **Golem**: *(透過 Gemini 2.5 Flash 分析截圖中的 Error Log)*
-> "偵測到 `EADDRINUSE: port 3000` 錯誤。這表示 Port 3000 被佔用了。
-> 我可以執行 `lsof -i :3000` 幫你找出是哪個 Process 佔用，或者直接幫你殺掉它嗎？"
+```
 
 ---
 
 ## ⚠️ 免責聲明 (Disclaimer)
 
-1. **自行承擔風險**：本軟體擁有執行 Shell 指令的高級權限，請謹慎授權高風險操作（如 `rm`, `Format`）。
-2. **帳號安全**：建議使用 **分身 Google 帳號 (Burner Account)** 來運行 Golem，以避免因自動化操作導致主帳號風險。
-3. **隱私聲明**：所有的長期記憶與向量資料皆儲存於您的 **本機設備**，開發者無法存取。
+Project Golem 是一個強大的自動化工具，擁有執行系統指令的能力。
+
+1. **安全風險**: 雖然有 Security Manager，但請勿在生產環境給予 root/admin 權限。
+2. **帳號安全**: Web Gemini 依賴您的 Google 帳號，請妥善保管 `golem_memory` 資料夾 (內含 Session Cookie)。
+3. **自主性**: AI 可能會產生幻覺或執行非預期操作，請始終保持監控。
 
 ---
 
-Created with Gemini by **Arvin_Chen**
-<a href="https://www.buymeacoffee.com/arvincreator" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+**Developed with ❤️ by Arvincreator**
+[Buy Me a Coffee](https://buymeacoffee.com/arvincreator)
