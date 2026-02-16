@@ -10,6 +10,7 @@
 const blessed = require('blessed');
 const contrib = require('blessed-contrib');
 const os = require('os');
+const WebServer = require('./dashboard/web-server');
 
 class DashboardPlugin {
     constructor() {
@@ -17,10 +18,13 @@ class DashboardPlugin {
         this.originalLog = console.log;
         this.originalError = console.error;
         this.isDetached = false;
-        
+
         // 狀態追蹤
         this.queueCount = 0;
         this.lastSchedule = "無排程";
+
+        // Web Server Init
+        this.webServer = new WebServer(this);
 
         // 2. 初始化螢幕
         this.screen = blessed.screen({
@@ -71,10 +75,10 @@ class DashboardPlugin {
 
         // 4. 資料初始化
         this.memData = { title: 'Memory (MB)', x: Array(60).fill(0).map((_, i) => i.toString()), y: Array(60).fill(0) };
-        
+
         // 5. 綁定按鍵
         this.screen.key(['escape', 'q', 'C-c'], () => this.detach());
-        
+
         // 6. 啟動攔截器
         this.hijackConsole();
         this.startMonitoring();
@@ -90,18 +94,34 @@ class DashboardPlugin {
             const time = new Date().toLocaleTimeString();
             const formattedMsg = `{gray-fg}[${time}]{/gray-fg} ${msg}`;
 
+            // Web Socket Emission
+            if (this.webServer) {
+                // Strip blessed tags for web or keep them and handle in frontend
+                const cleanMsg = msg.replace(/\{.*?\}/g, '');
+                let type = 'general';
+                if (msg.includes('[Chronos]') || msg.includes('排程')) type = 'chronos';
+                else if (msg.includes('[Queue]') || msg.includes('隊列')) type = 'queue';
+
+                this.webServer.broadcastLog({ time, msg: cleanMsg, type, raw: msg });
+            }
+
             // 分流邏輯
             if (msg.includes('[Chronos]') || msg.includes('排程') || msg.includes('TimeWatcher')) {
                 if (this.chronosLog) this.chronosLog.log(`{yellow-fg}${msg}{/yellow-fg}`);
-                if (msg.includes('新增排程')) this.lastSchedule = msg.split('新增排程:')[1] || "更新中...";
-            } 
+                if (msg.includes('新增排程')) {
+                    this.lastSchedule = msg.split('新增排程:')[1] || "更新中...";
+                    if (this.webServer) this.webServer.broadcastState({ lastSchedule: this.lastSchedule });
+                }
+            }
             else if (msg.includes('[Queue]') || msg.includes('隊列')) {
                 if (this.queueLog) this.queueLog.log(`{magenta-fg}${msg}{/magenta-fg}`);
                 // 簡單的狀態解析
                 if (msg.includes('加入隊列')) this.queueCount++;
                 if (msg.includes('開始處理')) this.queueCount = Math.max(0, this.queueCount - 1);
+
+                if (this.webServer) this.webServer.broadcastState({ queueCount: this.queueCount });
             }
-            
+
             // 全域顯示
             if (this.logBox) this.logBox.log(formattedMsg);
         };
@@ -111,6 +131,7 @@ class DashboardPlugin {
             if (this.isDetached) return;
             const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : a).join(' ');
             if (this.logBox) this.logBox.log(`{red-fg}[錯誤] ${msg}{/red-fg}`);
+            if (this.webServer) this.webServer.broadcastLog({ time: new Date().toLocaleTimeString(), msg: msg, type: 'error' });
         };
     }
 
@@ -119,6 +140,12 @@ class DashboardPlugin {
         this.screen.destroy();
         console.log = this.originalLog;
         console.error = this.originalError;
+
+        if (this.webServer) {
+            this.webServer.stop();
+            this.originalLog("🌐 Web Dashboard has been stopped.");
+        }
+
         console.log("\n============================================");
         console.log("📺 Dashboard 已關閉 (Visual Interface Detached)");
         console.log("🤖 Golem v8.6 仍在背景執行中...");
@@ -139,6 +166,15 @@ class DashboardPlugin {
             const uptime = Math.floor(process.uptime());
             const hours = Math.floor(uptime / 3600);
             const minutes = Math.floor((uptime % 3600) / 60);
+
+            // Web Socket Heartbeat
+            if (this.webServer) {
+                this.webServer.broadcastHeartbeat({
+                    memUsage,
+                    uptime: `${hours}h ${minutes}m`,
+                    cpu: 0 // Placeholder
+                });
+            }
 
             // 狀態面板更新 (v8.6 特有狀態)
             this.statusBox.setMarkdown(`
