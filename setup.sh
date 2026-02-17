@@ -69,6 +69,10 @@ else
 fi
 echo ""
 
+# 讀取 DASHBOARD_PORT
+DB_PORT=$(grep "^DASHBOARD_PORT=" .env | cut -d'=' -f2)
+DB_PORT=${DB_PORT:-3000}
+
 # ------------------------------------------------------------
 # 3. 安裝 NPM 依賴 (含 Dashboard)
 # ------------------------------------------------------------
@@ -157,10 +161,39 @@ else
 fi
 
 echo ""
+
+echo ""
 echo -e "${GREEN}==========================================================${NC}"
 echo -e "${GREEN}🎉 安裝完成！(v9.0 Titan Chronos Edition)${NC}"
-echo -e "🚀 啟動命令："
-echo -e "   - 標準模式: ${YELLOW}npm start${NC}"
-echo -e "   - 戰術面板: ${YELLOW}npm start dashboard${NC} (推薦：可監控排程與隊列)"
-echo -e "   - 🌐 Web UI: ${YELLOW}http://localhost:3000${NC} (啟動 Dashboard 後可用)"
+echo -e "${CYAN}🌐 Web Dashboard: http://localhost:${DB_PORT}/dashboard${NC}"
 echo -e "${GREEN}==========================================================${NC}"
+echo ""
+
+# ------------------------------------------------------------
+# 6. 互動式啟動 (Interactive Startup)
+# ------------------------------------------------------------
+echo -e "🚀 您想要立即啟動 Golem 嗎？"
+echo -e " [1] 啟動戰術面板 (Dashboard Mode) - ${YELLOW}推薦，含 Web UI${NC}"
+echo -e " [2] 啟動標準模式 (Standard Mode) - 僅 CLI"
+echo -e " [3] 稍後再說 (Exit)"
+echo ""
+
+read -p "👉 請輸入選項 [1-3] (預設 1): " START_OPT
+
+case "$START_OPT" in
+    2)
+        echo -e "${GREEN}🚀 正在啟動標準模式...${NC}"
+        npm start
+        ;;
+    3)
+        echo -e "${GREEN}👋以此命令啟動：${NC}"
+        echo -e "   - 戰術面板: ${YELLOW}npm start dashboard${NC}"
+        echo -e "   - 標準模式: ${YELLOW}npm start${NC}"
+        echo -e "   - 啟動後可訪問: ${CYAN}http://localhost:${DB_PORT}/dashboard${NC}"
+        exit 0
+        ;;
+    *)
+        echo -e "${GREEN}🚀 正在啟動戰術面板 (Dashboard Mode)...${NC}"
+        npm start dashboard
+        ;;
+esac

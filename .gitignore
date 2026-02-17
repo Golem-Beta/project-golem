@@ -58,3 +58,25 @@ Thumbs.db
 !.vscode/extensions.json
 !.vscode/settings.json
 !.devcontainer/
+
+# ========================
+# 6. Dashboard 2.0 (Next.js & Build Artifacts)
+# ========================
+web-dashboard/.next/
+web-dashboard/out/
+web-dashboard/node_modules/
+web-dashboard/.vercel/
+web-dashboard/*.tsbuildinfo
+
+# Deployed Dashboard Frontend (Built from web-dashboard)
+# dashboard/public/  <-- Uncomment if you want to force users to build frontend manually
+# For now, we might want to keep it if we want it to work out of the box?
+# Actually, standard practice is to ignore build artifacts.
+dashboard/public/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/

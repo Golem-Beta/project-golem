@@ -127,13 +127,14 @@ Golem 不再是一個人在戰鬥。v9.0 支援動態召喚 AI 專家團隊，�
 * **🌊 Flood Guard**: 防止啟動時處理過多歷史訊息。
 * **🛡️ Security Manager**: 攔截高風險指令 (`rm -rf`, `format`)，需管理員授權。
 
-### 📺 戰術控制台 (Dashboard v9.0)
+### 📺 多模態控制台 (Dual-Mode Dashboard)
 
-基於 `blessed-contrib` 的終端機儀表板 ，提供：
+Golem v9.0 提供兩種強大的監控介面，讓您隨時掌握系統動向：
 
-* **CPU/RAM 監控**: 實時心跳。
-* **Chronos Radar**: 顯示即將執行的排程。
-* **Traffic Control**: 監控對話隊列與 Agent 會議狀態。
+* **終端機戰術面板 (TUI)**: 基於 `blessed-contrib`，適合伺服器環境或極客玩家。提供核心心跳、Chronos 雷達與隊列監控。
+* **次世代 Web 控制面板 (Web UI v2.0)**: 基於 Next.js 15 的現代化介面，提供更豐富的圖表、即時日誌流與 Agent 會議觀察頻道。
+    - **預設網址**: `http://localhost:3000/dashboard`
+    - **核心特性**: 實時時序雷達、Agent 互動監控、神經日誌流感應器。
 
 ---
 

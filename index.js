@@ -76,7 +76,7 @@ if (CONFIG.API_KEYS.some(isPlaceholder)) CONFIG.API_KEYS = CONFIG.API_KEYS.filte
 // --- 初始化組件 ---
 // ⏱️ [v8.7 保留] Flood Guard - 啟動時間戳記
 const BOOT_TIME = Date.now();
-console.log(`🛡️ [v8.7 Flood Guard] 系統啟動時間: ${new Date(BOOT_TIME).toLocaleString('zh-TW', {hour12: false})}`);
+console.log(`🛡️ [v8.7 Flood Guard] 系統啟動時間: ${new Date(BOOT_TIME).toLocaleString('zh-TW', { hour12: false })}`);
 
 puppeteer.use(StealthPlugin());
 
@@ -90,7 +90,7 @@ const pendingTasks = new Map();
 global.pendingPatch = null;
 
 // ✨ [v9.0 新增] MultiAgent 全域狀態
-global.multiAgentListeners = new Map(); 
+global.multiAgentListeners = new Map();
 global.pausedConversations = new Map();
 
 // 🔧 FIX: pendingTasks 自動過期機制 (5 分鐘)
@@ -485,7 +485,7 @@ class KeyChain {
 
     markCooldown(key, durationMs = 15 * 60 * 1000) {
         this._cooldownUntil.set(key, Date.now() + durationMs);
-        console.log(`🧊 [KeyChain] Key #${this.keys.indexOf(key)} 冷卻 ${Math.round(durationMs/60000)} 分鐘`);
+        console.log(`🧊 [KeyChain] Key #${this.keys.indexOf(key)} 冷卻 ${Math.round(durationMs / 60000)} 分鐘`);
     }
 
     _isCooling(key, idx = null) {
@@ -531,14 +531,14 @@ class KeyChain {
         if (stat) stat.errors++;
         if (error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED')) {
             const isDaily = error.message.includes('per day');
-            this.markCooldown(key, isDaily ? 15*60*1000 : 90*1000);
+            this.markCooldown(key, isDaily ? 15 * 60 * 1000 : 90 * 1000);
         }
     }
 
     getStatus() {
         const cooling = [];
         for (const [k, t] of this._cooldownUntil) {
-            const remain = Math.max(0, Math.round((t - Date.now())/1000));
+            const remain = Math.max(0, Math.round((t - Date.now()) / 1000));
             if (remain > 0) cooling.push(`#${this.keys.indexOf(k)}(${remain}s)`);
         }
         return cooling.length > 0 ? cooling.join(', ') : '全部可用';
@@ -791,6 +791,45 @@ class GolemBrain {
         if (mode === 'qmd') this.memoryDriver = new SystemQmdDriver();
         else if (mode === 'native' || mode === 'system') this.memoryDriver = new SystemNativeDriver();
         else this.memoryDriver = new BrowserMemoryDriver(this);
+
+        this.chatLogFile = path.join(__dirname, 'logs', 'agent_chat.jsonl');
+        // Ensure directory exists
+        if (!fs.existsSync(path.dirname(this.chatLogFile))) {
+            fs.mkdirSync(path.dirname(this.chatLogFile), { recursive: true });
+        }
+
+        // Retention: Clean logs older than 1 day
+        this._cleanupLogs(24 * 60 * 60 * 1000);
+    }
+
+    _cleanupLogs(maxAgeMs) {
+        if (!fs.existsSync(this.chatLogFile)) return;
+        try {
+            const now = Date.now();
+            const content = fs.readFileSync(this.chatLogFile, 'utf8');
+            const lines = content.trim().split('\n');
+            const keptLines = lines.filter(line => {
+                try {
+                    const entry = JSON.parse(line);
+                    return (now - entry.timestamp) < maxAgeMs;
+                } catch (e) { return false; }
+            });
+
+            if (keptLines.length < lines.length) {
+                fs.writeFileSync(this.chatLogFile, keptLines.join('\n') + '\n');
+                console.log(`🧹 [System] 已清理過期對話日誌 (${lines.length - keptLines.length} 條)`);
+            }
+        } catch (e) {
+            console.error("Cleanup logs failed:", e);
+        }
+    }
+
+    _appendChatLog(entry) {
+        try {
+            fs.appendFileSync(this.chatLogFile, JSON.stringify(entry) + '\n');
+        } catch (e) {
+            console.error("Failed to write chat log:", e);
+        }
     }
 
     async init(forceReload = false) {
@@ -813,6 +852,16 @@ class GolemBrain {
             console.warn("🔄 [System] 記憶引擎降級為 Browser/Native...");
             this.memoryDriver = new BrowserMemoryDriver(this);
             await this.memoryDriver.init();
+        }
+
+        // Link Dashboard Context if active
+        if (process.argv.includes('dashboard')) {
+            try {
+                const dashboard = require('./dashboard');
+                dashboard.setContext(this, this.memoryDriver);
+            } catch (e) {
+                console.error("Failed to link dashboard context:", e);
+            }
         }
 
         if (forceReload || isNewSession) {
@@ -1163,6 +1212,15 @@ class InteractiveMultiAgent {
                 `🤖 **${agent.name}** _(${agent.role})_ ${badges.join(' ')}\n` +
                 `${parsed.reply}`
             );
+            console.log(`[MultiAgent] [${agent.name}] ${parsed.reply.replace(/\n/g, ' ')}`);
+            this.brain._appendChatLog({
+                timestamp: Date.now(),
+                sender: agent.name,
+                content: parsed.reply,
+                type: 'agent',
+                role: agent.role,
+                isSystem: false
+            });
         } catch (e) {
             console.error(`[InteractiveMultiAgent] ${agent.name} 發言失敗:`, e.message);
             await ctx.reply(`⚠️ ${agent.name} 暫時無法發言`);
@@ -1201,6 +1259,15 @@ class InteractiveMultiAgent {
     async _handleMention(ctx, input, mentions, round) {
         const conv = this.activeConversation;
         await ctx.reply(`👤 **您的發言**\n${input}`);
+        console.log(`[MultiAgent] [User] ${input.replace(/\n/g, ' ')}`);
+        this.brain._appendChatLog({
+            timestamp: Date.now(),
+            sender: 'User',
+            content: input,
+            type: 'user',
+            role: 'User',
+            isSystem: false
+        });
         conv.messages.push({
             round: round,
             speaker: '您',
@@ -1285,6 +1352,15 @@ ${userMessage}
     async _recordUserMessage(ctx, input, round) {
         const conv = this.activeConversation;
         await ctx.reply(`👤 **您的發言已加入討論**\n${input}`);
+        console.log(`[MultiAgent] [User] ${input.replace(/\n/g, ' ')}`);
+        this.brain._appendChatLog({
+            timestamp: Date.now(),
+            sender: 'User',
+            content: input,
+            type: 'user',
+            role: 'User',
+            isSystem: false
+        });
         conv.messages.push({
             round: round,
             speaker: '您',
@@ -1754,6 +1830,17 @@ class ConversationManager {
         const task = this.queue.shift();
         try {
             console.log(`🚀 [Queue] 開始處理訊息...`);
+
+            // ✨ [Log] 記錄用戶輸入 (Fix missing user logs)
+            this.brain._appendChatLog({
+                timestamp: Date.now(),
+                sender: 'User', // 統一顯示為 User，也可由 ctx.userId 區分
+                content: task.text,
+                type: 'user',
+                role: 'User',
+                isSystem: false
+            });
+
             await task.ctx.sendTyping();
             const memories = await this.brain.recall(task.text);
             let finalInput = task.text;
@@ -2093,7 +2180,7 @@ async function executeDrop(ctx) {
 
 if (tgBot) {
     tgBot.on('message', (msg) => handleUnifiedMessage(new UniversalContext('telegram', msg, tgBot)));
-    
+
     // 🛠️ [Fix] 修正後的回調處理：優先應答，避免超時崩潰
     tgBot.on('callback_query', async (query) => {
         // 1. 先告訴 Telegram Server "我收到了"，停止前端轉圈圈

@@ -10,7 +10,7 @@
 const blessed = require('blessed');
 const contrib = require('blessed-contrib');
 const os = require('os');
-const WebServer = require('./dashboard/web-server');
+const WebServer = require('./web-dashboard/server');
 
 class DashboardPlugin {
     constructor() {
@@ -94,25 +94,38 @@ class DashboardPlugin {
             const time = new Date().toLocaleTimeString();
             const formattedMsg = `{gray-fg}[${time}]{/gray-fg} ${msg}`;
 
+            // Strip blessed tags and ANSI codes for clean processing
+            // eslint-disable-next-line no-control-regex
+            const cleanMsg = msg.replace(/\u001b\[.*?m/g, '').replace(/\{.*?\}/g, '');
+
             // Web Socket Emission
             if (this.webServer) {
-                // Strip blessed tags for web or keep them and handle in frontend
-                const cleanMsg = msg.replace(/\{.*?\}/g, '');
                 let type = 'general';
-                if (msg.includes('[Chronos]') || msg.includes('排程')) type = 'chronos';
-                else if (msg.includes('[Queue]') || msg.includes('隊列')) type = 'queue';
-                else if (msg.includes('[MultiAgent]')) type = 'agent'; // v9.0 新增類型
+                if (cleanMsg.includes('Error') || cleanMsg.includes('❌')) type = 'error';
+                else if (cleanMsg.includes('[MultiAgent]')) type = 'agent';
+                else if (cleanMsg.includes('[Chronos]') || cleanMsg.includes('排程')) type = 'chronos';
+                else if (cleanMsg.includes('[Queue]') || cleanMsg.includes('隊列')) type = 'queue';
 
-                this.webServer.broadcastLog({ time, msg: cleanMsg, type, raw: msg });
+                this.webServer.broadcastLog({
+                    time: time,
+                    msg: cleanMsg.trim(),
+                    type: type,
+                    raw: msg
+                });
             }
 
             // 分流邏輯
-            if (msg.includes('[Chronos]') || msg.includes('排程') || msg.includes('TimeWatcher')) {
+            // 分流邏輯
+            if (cleanMsg.includes('[Chronos]') || cleanMsg.includes('排程') || cleanMsg.includes('TimeWatcher')) {
                 // 保留 Chronos 監控
                 if (this.chronosLog) this.chronosLog.log(`{yellow-fg}${msg}{/yellow-fg}`);
-                if (msg.includes('新增排程')) {
-                    this.lastSchedule = msg.split('新增排程:')[1] || "更新中...";
-                    if (this.webServer) this.webServer.broadcastState({ lastSchedule: this.lastSchedule });
+                if (cleanMsg.includes('新增排程')) {
+                    // Fix: Use cleanMsg to avoid ANSI issues and trim result
+                    const scheduleText = cleanMsg.split('新增排程:')[1] || "更新中...";
+                    this.lastSchedule = scheduleText.trim();
+                    if (this.webServer) {
+                        this.webServer.broadcastState({ lastSchedule: this.lastSchedule });
+                    }
                 }
             }
             // v9.0 新增：捕捉 MultiAgent 會議紀錄，並導向 QueueLog 以區隔顯示
@@ -197,6 +210,12 @@ class DashboardPlugin {
 `);
             this.screen.render();
         }, 1000);
+    }
+
+    setContext(brain, memory) {
+        if (this.webServer) {
+            this.webServer.setContext(brain, memory);
+        }
     }
 }
 
