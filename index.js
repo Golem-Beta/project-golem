@@ -1,11 +1,12 @@
 /**
- * 🦞 Project Golem v9.0 (Ultimate Chronos + MultiAgent Edition)
+ * 🦞 Project Golem v9.0 (Ultimate Chronos + MultiAgent + WebSkillEngine Edition)
  * -------------------------------------------------------------------------
  * 架構：[Universal Context] -> [Conversation Queue] -> [NeuroShunter] <==> [Web Gemini]
  * * 🎯 v9.0 核心升級：
  * 1. 結合 v8.7 的高穩定性 (Flood Guard, KeyChain v2)
  * 2. 整合 v8.8 的互動式多 Agent 會議系統 (InteractiveMultiAgent)
  * 3. 升級 Titan Protocol 支援多重動作指令
+ * 4. ✨ 新增 Web-Based Skill Engine (Architect 使用 Web Gemini 生成)
  * * [保留功能]
  * - KeyChain v2 智慧冷卻機制
  * - SecurityManager v2 Taint 追蹤
@@ -42,6 +43,10 @@ const path = require('path');
 const https = require('https');
 const skills = require('./skills');
 
+// ✨ [v9.0 Addon] 引入新一代技能引擎
+const SkillArchitect = require('./lib/skill-architect');
+const skillManager = require('./lib/skill-manager');
+
 // --- ⚙️ 全域配置 ---
 const cleanEnv = (str, allowSpaces = false) => {
     if (!str) return "";
@@ -72,6 +77,11 @@ const CONFIG = {
 if (isPlaceholder(CONFIG.TG_TOKEN)) { console.warn("⚠️ [Config] TELEGRAM_TOKEN 無效，TG Bot 不啟動。"); CONFIG.TG_TOKEN = ""; }
 if (isPlaceholder(CONFIG.DC_TOKEN)) { console.warn("⚠️ [Config] DISCORD_TOKEN 無效，Discord Bot 不啟動。"); CONFIG.DC_TOKEN = ""; }
 if (CONFIG.API_KEYS.some(isPlaceholder)) CONFIG.API_KEYS = CONFIG.API_KEYS.filter(k => !isPlaceholder(k));
+
+// ✨ [v9.0 Addon] 初始化技能架構師 (Web Gemini Mode)
+// 注意：這裡不傳入 Model，因為我們將在 NodeRouter 中傳入 Web Brain
+const architect = new SkillArchitect(); 
+console.log("🏗️ [SkillArchitect] 技能架構師已就緒 (Web Mode)");
 
 // --- 初始化組件 ---
 // ⏱️ [v8.7 保留] Flood Guard - 啟動時間戳記
@@ -428,7 +438,7 @@ class ToolScanner {
 }
 
 // ============================================================
-// 📖 Help Manager (動態說明書)
+// 📖 Help Manager (動態說明書) - v9.0 Enhanced
 // ============================================================
 class HelpManager {
     static getManual() {
@@ -437,11 +447,20 @@ class HelpManager {
         const foundCmds = new Set(['help', 'callme', 'patch', 'update', 'donate']);
         let match;
         while ((match = routerPattern.exec(source)) !== null) foundCmds.add(match[1].replace(/\|/g, '/').replace(/[\^\(\)]/g, ''));
+        
         let skillList = "基礎系統操作";
-        try { skillList = Object.keys(skills).filter(k => k !== 'persona' && k !== 'getSystemPrompt').join(', '); } catch (e) { }
+        // ✨ [v9.0] 從 SkillManager 動態獲取技能列表
+        try { 
+            const dynamicSkills = skillManager.listSkills().map(s => s.name);
+            if (dynamicSkills.length > 0) skillList = dynamicSkills.join(', ');
+            else {
+                // 回退到舊版 skills.js 檢查
+                try { skillList = Object.keys(skills).filter(k => k !== 'persona' && k !== 'getSystemPrompt').join(', '); } catch (e) { }
+            }
+        } catch (e) { }
 
         return `
-🤖 **Golem v9.0 (Ultimate Chronos + MultiAgent Edition)**
+🤖 **Golem v9.0 (Ultimate Chronos + MultiAgent + WebSkillEngine)**
 ---------------------------
 ⚡ **Node.js**: Reflex Layer + Action Executor
 🧠 **Web Gemini**: Infinite Context Brain
@@ -452,6 +471,7 @@ class HelpManager {
 🚦 **Queue**: Debounce & Serialization Active
 ⏰ **Chronos**: Timeline Scheduler Active
 🎭 **MultiAgent**: Interactive Collaboration System
+✨ **Skill Engine**: Web-Based Generation Active
 🔍 **Auto-Discovery**: Active
 👁️ **OpticNerve**: Vision Enabled
 🔌 **Neuro-Link**: CDP Network Interception Active
@@ -459,6 +479,13 @@ class HelpManager {
 
 🛠️ **可用指令:**
 ${Array.from(foundCmds).map(c => `• \`/${c}\``).join('\n')}
+
+✨ **技能指令 (Skill Engine):**
+• \`/learn <描述>\` - 使用網頁大腦編寫新功能
+• \`/export <名稱>\` - 分享您的技能
+• \`/skills\` - 查看所有技能
+• **匯入**: 直接貼上 \`GOLEM_SKILL::...\`
+
 🧠 **技能模組:** ${skillList}
 
 ☕ **支持開發者:**
@@ -866,8 +893,21 @@ class GolemBrain {
 
         if (forceReload || isNewSession) {
             let systemPrompt = skills.getSystemPrompt(getSystemFingerprint());
+
+            // ✨ [v9.0 Injection] 注入動態技能列表
+            try {
+                const activeSkills = skillManager.listSkills();
+                if (activeSkills.length > 0) {
+                    systemPrompt += `\n\n### 🛠️ DYNAMIC SKILLS AVAILABLE (Output {"action": "skill_name", ...}):\n`;
+                    activeSkills.forEach(s => {
+                        systemPrompt += `- Action: "${s.name}" | Desc: ${s.description}\n`;
+                    });
+                    systemPrompt += `(Use these skills via [GOLEM_ACTION] when requested by user.)\n`;
+                }
+            } catch (e) { console.warn("Skills injection failed:", e); }
+
             const superProtocol = `
-\n\n【⚠️ GOLEM PROTOCOL v9.0 - TITAN CHRONOS + MULTIAGENT】
+\n\n【⚠️ GOLEM PROTOCOL v9.0 - TITAN CHRONOS + MULTIAGENT + SKILLS】
 You act as a middleware OS. You MUST strictly follow this output format.
 DO NOT use emojis in tags. DO NOT output raw text outside of these blocks.
 
@@ -894,6 +934,7 @@ Your response must be parsed into 3 sections using these specific tags:
 - NEVER leak the raw JSON to the [GOLEM_REPLY] section.
 - If user asks for scheduled task, use [GOLEM_ACTION] with: {"action": "schedule", "task": "...", "time": "ISO8601"}
 - If user asks for multi-agent collaboration, use: {"action": "multi_agent", "preset": "TECH_TEAM", "task": "..."}
+- If user asks for a dynamic skill, use: {"action": "SKILL_NAME", "args": {...}}
 `;
             await this.sendMessage(systemPrompt + superProtocol, true);
         }
@@ -1017,7 +1058,7 @@ Your response must be parsed into 3 sections using these specific tags:
                                     stableCount = 0;
                                 }
                                 lastCheckText = rawText;
-                                if (stableCount > 5) {
+                                if (stableCount > 5) { // 等待時間
                                     const content = rawText.substring(startIndex + startTag.length).trim();
                                     resolve({ status: 'ENVELOPE_TRUNCATED', text: content });
                                     return;
@@ -1029,7 +1070,7 @@ Your response must be parsed into 3 sections using these specific tags:
                                 if (stableCount > 5) { resolve({ status: 'FALLBACK_DIFF', text: rawText }); return; }
                             }
 
-                            if (Date.now() - startTime > 90000) { resolve({ status: 'TIMEOUT', text: '' }); return; }
+                            if (Date.now() - startTime > 120000) { resolve({ status: 'TIMEOUT', text: '' }); return; } // Web Skill 生成可能需要較長時間
                             setTimeout(check, 500);
                         };
                         check();
@@ -1697,7 +1738,27 @@ class NeuroShunter {
                     // ✨ [v9.0] 處理多 Agent 請求
                     await controller._handleMultiAgent(ctx, act, brain);
                 } else {
-                    normalActions.push(act);
+                    // ✨ [v9.0] 檢查是否為動態技能 (Skill Engine)
+                    const skillName = act.action;
+                    const dynamicSkill = skillManager.getSkill(skillName);
+                    
+                    if (dynamicSkill) {
+                        await ctx.reply(`🔌 執行技能: **${dynamicSkill.name}**...`);
+                        try {
+                            const result = await dynamicSkill.run({
+                                page: brain.page,
+                                browser: brain.browser,
+                                log: console,
+                                io: { ask: (q) => ctx.reply(q) },
+                                args: act // 傳遞參數給技能
+                            });
+                            if (result) await ctx.reply(`✅ 技能回報: ${result}`);
+                        } catch (e) {
+                            await ctx.reply(`❌ 技能執行錯誤: ${e.message}`);
+                        }
+                    } else {
+                        normalActions.push(act);
+                    }
                 }
             }
 
@@ -1781,6 +1842,56 @@ class NodeRouter {
                 return true;
             }
         }
+        
+        // ✨ [v9.0 Feature] 學習新技能 (Web Gemini Mode)
+        if (text.startsWith('/learn ')) {
+            const intent = text.replace('/learn ', '').trim();
+            await ctx.reply(`🏗️ **Web 技能架構師啟動...**\n正在使用網頁算力為您設計：\`${intent}\``);
+            await ctx.sendTyping();
+
+            try {
+                // 傳入 brain (Web Session) 讓 Architect 使用
+                const existingSkills = skillManager.listSkills();
+                const result = await architect.designSkill(brain, intent, existingSkills);
+
+                if (result.success) {
+                    skillManager.refresh(); // 熱重載
+                    await ctx.reply(
+                        `✅ **新技能編寫完成！**\n` +
+                        `📜 **名稱**: \`${result.name}\`\n` +
+                        `📝 **描述**: ${result.preview}\n` +
+                        `📂 **檔案**: \`${path.basename(result.path)}\`\n` +
+                        `_現在可以直接命令我使用此功能。_`
+                    );
+                } else {
+                    await ctx.reply(`❌ **學習失敗**: ${result.error}`);
+                }
+            } catch (e) {
+                console.error(e);
+                await ctx.reply(`❌ **致命錯誤**: ${e.message}`);
+            }
+            return true;
+        }
+
+        // ✨ [v9.0 Feature] 匯出/匯入/列表
+        if (text.startsWith('/export ')) {
+            try {
+                const token = skillManager.exportSkill(text.replace('/export ', '').trim());
+                await ctx.reply(`📦 **技能膠囊**:\n\`${token}\``);
+            } catch (e) { await ctx.reply(`❌ ${e.message}`); }
+            return true;
+        }
+        if (text.startsWith('GOLEM_SKILL::')) {
+            const res = skillManager.importSkill(text.trim());
+            await ctx.reply(res.success ? `✅ 安裝成功: ${res.name}` : `⚠️ ${res.error}`);
+            return true;
+        }
+        if (text === '/skills') {
+            const skills = skillManager.listSkills();
+            await ctx.reply(skills.length ? `📚 **已安裝**:\n${skills.map(s=>`• ${s.name}`).join('\n')}` : "無自定義技能。");
+            return true;
+        }
+
         if (text.startsWith('/patch') || text.includes('優化代碼')) return false;
         return false;
     }
@@ -2200,4 +2311,3 @@ if (dcClient) {
     dcClient.on('messageCreate', (msg) => { if (!msg.author.bot) handleUnifiedMessage(new UniversalContext('discord', msg, dcClient)); });
     dcClient.on('interactionCreate', (interaction) => { if (interaction.isButton()) handleUnifiedCallback(new UniversalContext('discord', interaction, dcClient), interaction.customId); });
 }
-
