@@ -142,7 +142,7 @@ git clone https://github.com/Arvincreator/project-golem.git
 cd project-golem
 
 ```
-### 3. 一鍵安裝 (自動化)
+###  一鍵安裝 (自動化)
 
 此腳本會自動安裝 Node.js (若無)、`blessed` 儀表板套件，並建立 `.env` 設定檔。
 
