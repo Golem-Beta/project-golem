@@ -13,7 +13,7 @@
  * - Flood Guard 啟動時間過濾
  * - DOM Doctor 自動修復
  */
-
+require('dotenv').config();
 // ==========================================
 // 📟 儀表板外掛 (Dashboard Switch)
 // ==========================================
@@ -29,7 +29,6 @@ if (process.argv.includes('dashboard')) {
 }
 
 // ==========================================
-require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');

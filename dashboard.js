@@ -10,7 +10,12 @@
 const blessed = require('blessed');
 const contrib = require('blessed-contrib');
 const os = require('os');
-const WebServer = require('./web-dashboard/server');
+let WebServer = null;
+try {
+    WebServer = require('./web-dashboard/server');
+} catch (e) {
+    console.error("⚠️  Web Dashboard module not found or failed to load:", e.message);
+}
 
 class DashboardPlugin {
     constructor() {
@@ -24,7 +29,16 @@ class DashboardPlugin {
         this.lastSchedule = "無排程";
 
         // Web Server Init (保留 v8.6 Web 介面功能)
-        this.webServer = new WebServer(this);
+        if (process.env.ENABLE_WEB_DASHBOARD === 'true' && WebServer) {
+            try {
+                this.webServer = new WebServer(this);
+            } catch (e) {
+                console.error("❌ Failed to start Web Dashboard:", e.message);
+                this.webServer = null;
+            }
+        } else {
+            this.webServer = null;
+        }
 
         // 2. 初始化螢幕
         this.screen = blessed.screen({

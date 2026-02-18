@@ -36,17 +36,24 @@ module.exports = {
         // 注意：這裡不包含 Output Protocol，因為 index.js 會強制注入 Tri-Stream Protocol
         let fullPrompt = CORE_DEFINITION(systemInfo) + "\n";
 
-        // 2. 注入技能模組
-        fullPrompt += "📦 **已載入技能模組 (Active Skills):**\n";
-        for (const [name, prompt] of Object.entries(SKILLS)) {
+        for (const [name, module] of Object.entries(SKILLS)) {
+            // 兼容 Class 或 String 類型的技能模組
+            const prompt = typeof module === 'string' ? module : (module.PROMPT || "");
+            if (!prompt) continue;
+
             // 只顯示技能名稱與第一行描述，保持 Prompt 簡潔
-            fullPrompt += `> [${name}]: ${prompt.trim().split('\n')[1].replace('【已載入技能：', '').replace('】', '')}\n`;
+            const lines = prompt.trim().split('\n');
+            const firstLine = lines.length > 1 ? lines[1] : (lines[0] || "（無描述）");
+            fullPrompt += `> [${name}]: ${firstLine.replace('【已載入技能：', '').replace('】', '')}\n`;
         }
 
         // 3. 詳細技能說明
         fullPrompt += "\n📚 **技能詳細手冊:**\n";
-        for (const [name, prompt] of Object.entries(SKILLS)) {
-            fullPrompt += `\n--- Skill: ${name} ---\n${prompt}\n`;
+        for (const [name, module] of Object.entries(SKILLS)) {
+            const prompt = typeof module === 'string' ? module : (module.PROMPT || "");
+            if (prompt) {
+                fullPrompt += `\n--- Skill: ${name} ---\n${prompt}\n`;
+            }
         }
 
         fullPrompt += `\n[系統就緒] 請等待 ${persona.get().userName} 的指令。`;
