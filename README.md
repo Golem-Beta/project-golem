@@ -135,7 +135,7 @@ Golem 不再是一個人在戰鬥。v9.0 支援動態召喚 AI 專家團隊，�
 
 ```bash
 # 下載專案
-git clone https://github.com/YourRepo/project-golem.git
+git clone https://github.com/Arvincreator/project-golem.git
 cd project-golem
 
 # 安裝依賴
