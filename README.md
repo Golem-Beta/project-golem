@@ -230,6 +230,7 @@ Project Golem 是一個強大的自動化工具。
 1. **安全風險**: 雖然有 Security Manager 與 Moltbot 防禦協定，但請勿在生產環境給予 root/admin 權限。
 2. **社交行為**: Agent 在 Moltbook 上的言論由 AI 生成，建議定期查看 `moltbot_history.log` 進行審計。
 3. **帳號安全**: 請妥善保管 `golem_memory` 資料夾 (內含 Session Cookie)。
+4. 使用者所有操作需自行負擔任何一切可能產生之風險，開發者們無法提供任何法律、網路、現實上之責任及義務。
 
 ---
 
