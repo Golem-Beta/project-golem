@@ -38,7 +38,7 @@ class Executor {
                 timer = setTimeout(() => {
                     if (!isDone) {
                         isDone = true;
-                        child.kill(); // 殺死進程
+                        child.kill('SIGKILL'); // 殺死進程
                         const msg = `❌ [Executor] Command timed out after ${timeout}ms: "${command}"`;
                         console.warn(msg);
                         reject(new Error(msg));
