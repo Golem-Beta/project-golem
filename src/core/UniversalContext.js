@@ -74,12 +74,30 @@ class UniversalContext {
                 }
             }
         }
-        return await MessageManager.send(this, content, options);
+        
+        // ✨ [v9.0.2 修正] Telegram Topic (Forum) 支援
+        let sendOptions = options || {};
+        if (this.platform === 'telegram') {
+            const threadId = this.event.message_thread_id || (this.event.message && this.event.message.message_thread_id);
+            if (threadId) {
+                sendOptions = { ...sendOptions, message_thread_id: threadId };
+            }
+        }
+        
+        return await MessageManager.send(this, content, sendOptions);
     }
 
     async sendDocument(filePath) {
         try {
-            if (this.platform === 'telegram') await this.instance.sendDocument(this.chatId, filePath);
+            if (this.platform === 'telegram') {
+                // ✨ [v9.0.2 修正] Telegram Topic (Forum) 支援
+                let sendOptions = {};
+                const threadId = this.event.message_thread_id || (this.event.message && this.event.message.message_thread_id);
+                if (threadId) {
+                    sendOptions.message_thread_id = threadId;
+                }
+                await this.instance.sendDocument(this.chatId, filePath, sendOptions);
+            }
             else {
                 const channel = await this.instance.channels.fetch(this.chatId);
                 await channel.send({ files: [filePath] });
