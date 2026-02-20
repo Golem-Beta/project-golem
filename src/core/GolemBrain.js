@@ -297,17 +297,20 @@ Your response must be parsed into 3 sections using these specific tags:
             if (retryCount > 3) throw new Error("🔥 DOM Doctor 修復失敗，請檢查網路或 HTML 結構大幅變更。");
 
             try {
+                // 先嘗試計算基準線，如果這裡就報錯，代表 response selector 已經被污染了
                 const baseline = await this.page.evaluate((s) => {
                     const bubbles = document.querySelectorAll(s);
                     return bubbles.length > 0 ? bubbles[bubbles.length - 1].innerText : "";
-                }, sel.response);
+                }, sel.response).catch(() => "");
 
                 let inputEl = await this.page.$(sel.input);
                 if (!inputEl) {
                     console.log("🚑 找不到輸入框，呼叫 DOM Doctor...");
                     const html = await this.page.content();
-                    const newSel = await this.doctor.diagnose(html, 'input');
+                    let newSel = await this.doctor.diagnose(html, 'input');
                     if (newSel) {
+                        // 🛡️ [防毒面具] 強制洗掉 AI 可能夾帶的 Markdown 符號
+                        newSel = newSel.replace(/`/g, '').replace(/^(css|html|json)/i, '').trim();
                         this.selectors.input = newSel;
                         this.doctor.saveSelectors(this.selectors);
                         return tryInteract(this.selectors, retryCount + 1);
@@ -327,8 +330,10 @@ Your response must be parsed into 3 sections using these specific tags:
                 if (!sendEl) {
                     console.log("🚑 找不到發送按鈕，呼叫 DOM Doctor...");
                     const html = await this.page.content();
-                    const newSel = await this.doctor.diagnose(html, 'send');
+                    let newSel = await this.doctor.diagnose(html, 'send');
                     if (newSel) {
+                        // 🛡️ [防毒面具] 強制洗掉 AI 可能夾帶的 Markdown 符號
+                        newSel = newSel.replace(/`/g, '').replace(/^(css|html|json)/i, '').trim();
                         this.selectors.send = newSel;
                         this.doctor.saveSelectors(this.selectors);
                         return tryInteract(this.selectors, retryCount + 1);
@@ -409,8 +414,10 @@ Your response must be parsed into 3 sections using these specific tags:
                 if (retryCount === 0) {
                     console.log('🩺 [Brain] 啟動 DOM Doctor 進行 Response 診斷...');
                     const htmlDump = await this.page.content();
-                    const newSelector = await this.doctor.diagnose(htmlDump, 'response');
+                    let newSelector = await this.doctor.diagnose(htmlDump, 'response');
                     if (newSelector) {
+                        // 🛡️ [防毒面具] 強制洗掉 AI 可能夾帶的 Markdown 符號
+                        newSelector = newSelector.replace(/`/g, '').replace(/^(css|html|json)/i, '').trim();
                         this.selectors.response = newSelector;
                         this.doctor.saveSelectors(this.selectors);
                         return await tryInteract(this.selectors, retryCount + 1);
