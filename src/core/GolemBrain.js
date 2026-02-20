@@ -296,6 +296,16 @@ Your response must be parsed into 3 sections using these specific tags:
         const tryInteract = async (sel, retryCount = 0) => {
             if (retryCount > 3) throw new Error("🔥 DOM Doctor 修復失敗，請檢查網路或 HTML 結構大幅變更。");
 
+            // ✨ 智慧型脫殼濾水器函數
+            const cleanSelector = (rawSelector) => {
+                if (!rawSelector) return "";
+                return rawSelector
+                    .replace(/```[a-zA-Z]*\s*/gi, '') // 拔除開頭的 ```css 或 ```html
+                    .replace(/`/g, '')                 // 拔除所有反引號
+                    .replace(/^(css|html|json)\s*/i, '') // 拔除單獨出現在開頭的語言標籤
+                    .trim();
+            };
+
             try {
                 // 先嘗試計算基準線，如果這裡就報錯，代表 response selector 已經被污染了
                 const baseline = await this.page.evaluate((s) => {
@@ -309,9 +319,8 @@ Your response must be parsed into 3 sections using these specific tags:
                     const html = await this.page.content();
                     let newSel = await this.doctor.diagnose(html, 'input');
                     if (newSel) {
-                        // 🛡️ [防毒面具] 強制洗掉 AI 可能夾帶的 Markdown 符號
-                        newSel = newSel.replace(/`/g, '').replace(/^(css|html|json)/i, '').trim();
-                        this.selectors.input = newSel;
+                        this.selectors.input = cleanSelector(newSel);
+                        console.log(`🧼 [Doctor] 清洗後的 Input Selector: ${this.selectors.input}`);
                         this.doctor.saveSelectors(this.selectors);
                         return tryInteract(this.selectors, retryCount + 1);
                     }
@@ -332,9 +341,8 @@ Your response must be parsed into 3 sections using these specific tags:
                     const html = await this.page.content();
                     let newSel = await this.doctor.diagnose(html, 'send');
                     if (newSel) {
-                        // 🛡️ [防毒面具] 強制洗掉 AI 可能夾帶的 Markdown 符號
-                        newSel = newSel.replace(/`/g, '').replace(/^(css|html|json)/i, '').trim();
-                        this.selectors.send = newSel;
+                        this.selectors.send = cleanSelector(newSel);
+                        console.log(`🧼 [Doctor] 清洗後的 Send Selector: ${this.selectors.send}`);
                         this.doctor.saveSelectors(this.selectors);
                         return tryInteract(this.selectors, retryCount + 1);
                     }
@@ -344,7 +352,9 @@ Your response must be parsed into 3 sections using these specific tags:
                     try {
                         await this.page.waitForSelector(sel.send, { timeout: 2000 });
                         await this.page.click(sel.send);
-                    } catch (e) { await this.page.keyboard.press('Enter'); }
+                    } catch (e) { 
+                        await this.page.keyboard.press('Enter'); 
+                    }
                 }
 
                 if (isSystem) { await new Promise(r => setTimeout(r, 2000)); return ""; }
@@ -416,9 +426,8 @@ Your response must be parsed into 3 sections using these specific tags:
                     const htmlDump = await this.page.content();
                     let newSelector = await this.doctor.diagnose(htmlDump, 'response');
                     if (newSelector) {
-                        // 🛡️ [防毒面具] 強制洗掉 AI 可能夾帶的 Markdown 符號
-                        newSelector = newSelector.replace(/`/g, '').replace(/^(css|html|json)/i, '').trim();
-                        this.selectors.response = newSelector;
+                        this.selectors.response = cleanSelector(newSelector);
+                        console.log(`🧼 [Doctor] 清洗後的 Response Selector: ${this.selectors.response}`);
                         this.doctor.saveSelectors(this.selectors);
                         return await tryInteract(this.selectors, retryCount + 1);
                     }
