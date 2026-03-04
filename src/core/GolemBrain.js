@@ -2,7 +2,7 @@
 // 🧠 Golem Brain (Web Gemini) - Clean Architecture Facade
 // ============================================================
 const path = require('path');
-const { CONFIG, cleanEnv } = require('../config');
+const { CONFIG, cleanEnv, LOG_BASE_DIR, GOLEM_MODE } = require('../config');
 const DOMDoctor = require('../services/DOMDoctor');
 const BrowserMemoryDriver = require('../memory/BrowserMemoryDriver');
 const SystemQmdDriver = require('../memory/SystemQmdDriver');
@@ -43,8 +43,8 @@ class GolemBrain {
         // ── 對話日誌 ──
         this.chatLogManager = new ChatLogManager({
             golemId: this.golemId,
-            logDir: options.logDir || path.join(process.cwd(), 'logs'),
-            isSingleMode: options.isSingleMode || false
+            logDir: options.logDir || LOG_BASE_DIR,
+            isSingleMode: options.isSingleMode !== undefined ? options.isSingleMode : (GOLEM_MODE === 'SINGLE')
         });
     }
 
