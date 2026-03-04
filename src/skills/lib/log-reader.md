@@ -1,3 +1,4 @@
+<SkillModule path="src/skills/lib/log-reader.md">
 【已載入技能：日誌讀取員 (Log Reader)】
 你擁有檢索並閱讀系統已生成的每日對話摘要的能力。
 
@@ -18,3 +19,4 @@
 4. **輸出效果**：
    - `list`: 回傳現有摘要的日期列表。
    - `get`: 回傳該日的所有摘要項目（JSON 格式內容）。
+</SkillModule>
