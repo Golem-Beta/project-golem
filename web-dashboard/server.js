@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require("socket.io");
 const path = require('path');
 const fs = require('fs');
+const { MANDATORY_SKILLS, OPTIONAL_SKILLS: OPTIONAL_SKILL_LIST, resolveEnabledSkills } = require('../src/skills/skillsConfig');
 
 class WebServer {
     constructor(dashboard) {
@@ -171,15 +172,14 @@ class WebServer {
 
                 const files = fs.readdirSync(libPath).filter(f => f.endsWith('.md'));
 
-                const ALL_OPTIONAL_SKILLS = ['git.md', 'image-prompt.md', 'moltbot.md', 'spotify.md', 'youtube.md'];
-                const optionalSkillsConfig = process.env.OPTIONAL_SKILLS || '';
-                const enabledOptionalSkills = optionalSkillsConfig.split(',').map(s => s.trim().toLowerCase()).filter(s => s !== '');
+                // Use shared skillsConfig: mandatory always on, optional via env
+                const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', []);
 
                 const skillsData = files.map(file => {
                     const content = fs.readFileSync(path.join(libPath, file), 'utf8');
-                    const isOptional = ALL_OPTIONAL_SKILLS.includes(file);
                     const baseName = file.replace('.md', '').toLowerCase();
-                    const isEnabled = !isOptional || enabledOptionalSkills.includes(baseName);
+                    const isOptional = OPTIONAL_SKILL_LIST.includes(baseName);
+                    const isEnabled = enabledSkills.has(baseName);
 
                     // Extract first line or generic title
                     const firstLineMatch = content.match(/^#+ (.*)|^【(.*)】/m) || content.match(/^([^\n]+)/);
@@ -217,9 +217,13 @@ class WebServer {
                 const { id, enabled } = req.body;
                 if (!id) return res.status(400).json({ error: "Missing skill ID" });
 
-                const ALL_OPTIONAL_SKILLS = ['git', 'image-prompt', 'moltbot', 'spotify', 'youtube'];
-                if (!ALL_OPTIONAL_SKILLS.includes(id)) {
-                    return res.status(400).json({ error: "Cannot toggle core system skills" });
+                // Verify skill is optional and exists in lib/
+                const libPath = path.join(process.cwd(), 'src', 'skills', 'lib');
+                if (!fs.existsSync(path.join(libPath, `${id}.md`))) {
+                    return res.status(400).json({ error: `Skill "${id}" not found in lib/` });
+                }
+                if (MANDATORY_SKILLS.includes(id)) {
+                    return res.status(400).json({ error: `"${id}" is a mandatory skill and cannot be toggled` });
                 }
 
                 // 1. Update in-memory
@@ -289,6 +293,31 @@ class WebServer {
                             console.log(`⚡ [WebServer] Injecting skills into Golem [${id}]...`);
                             await context.brain.reloadSkills();
                             results.push({ id, status: 'success' });
+
+                            // 📣 TG 通知
+                            const tgBot = context.brain.tgBot;
+                            if (tgBot) {
+                                const { MANDATORY_SKILLS, OPTIONAL_SKILLS: OPT_LIST, resolveEnabledSkills } = require('../src/skills/skillsConfig');
+                                const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', []);
+                                const enabledOptional = OPT_LIST.filter(s => enabledSkills.has(s));
+                                const disabledOptional = OPT_LIST.filter(s => !enabledSkills.has(s));
+
+                                const mandatoryList = MANDATORY_SKILLS.map(s => `• ${s}`).join('\n');
+                                const optionalList = enabledOptional.length > 0 ? enabledOptional.map(s => `• ${s}`).join('\n') : '（無）';
+                                const disabledList = disabledOptional.length > 0 ? disabledOptional.map(s => `• ${s}`).join('\n') : '（無）';
+
+                                const msg = `⚡ *[${id}] 技能書已重新注入*\n\n🔒 *必要技能（永久啟用）:*\n${mandatoryList}\n\n✅ *已啟用選用技能:*\n${optionalList}\n\n⛔ *未啟用選用技能:*\n${disabledList}`;
+
+                                const gCfg = tgBot.golemConfig || {};
+                                const targetId = gCfg.adminId || gCfg.chatId;
+                                if (targetId) {
+                                    tgBot.sendMessage(targetId, msg, { parse_mode: 'Markdown' })
+                                        .catch(e => console.warn(`⚠️ [WebServer] TG skill notify failed [${id}]:`, e.message));
+                                    // 重啟通知
+                                    tgBot.sendMessage(targetId, `🔄 *[${id}] Golem 重啟中，請稍候...*\n技能配置已更新，正在重新載入記憶與技能書。`, { parse_mode: 'Markdown' })
+                                        .catch(e => console.warn(`⚠️ [WebServer] TG restart notify failed [${id}]:`, e.message));
+                                }
+                            }
                         } catch (e) {
                             console.error(`❌ [WebServer] Failed to inject skills into Golem [${id}]:`, e.message);
                             results.push({ id, status: 'error', error: e.message });

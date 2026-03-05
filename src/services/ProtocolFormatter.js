@@ -6,6 +6,7 @@ const path = require('path');
 const { getSystemFingerprint } = require('../utils/system');
 const skills = require('../skills');
 const skillManager = require('../managers/SkillManager');
+const { resolveEnabledSkills } = require('../skills/skillsConfig');
 
 class ProtocolFormatter {
     /**
@@ -91,7 +92,7 @@ ${selectedPrompt}
 5. FEASIBILITY: ZERO TRIAL-AND-ERROR. Provide the most stable, one-shot successful command.
 6. STRICT JSON: ESCAPE ALL DOUBLE QUOTES (\\") inside string values!
 7. ReAct: If you use [GOLEM_ACTION], DO NOT guess the result in [GOLEM_REPLY]. Wait for Observation.
-8. SKILL DISCOVERY: You can check skill files in \`src/skills/lib\` and memorize their usage in [GOLEM_MEMORY].
+8. SKILL BOUNDARY: You are NOT allowed to autonomously inspect or load skill files. Only injected skills are available to you.
 9. WORKSPACE: If you cannot access Google Workspace (@Google Drive/Keep/etc.), explicitly tell the user to enable the extension.
 ${observerPrompt}
 [USER INPUT / SYSTEM MESSAGE]
@@ -141,8 +142,7 @@ ${text}`;
             const mdFiles = files.filter(f => f.endsWith('.md'));
 
             if (mdFiles.length > 0) {
-                // Parse optional skills from environment variable AND golem persona preferences if any
-                // The persona setup will allow overwriting optional skills for specific golems
+                // Resolve enabled skills: mandatory always on, optional via env/persona
                 let personaSkills = [];
                 if (golemContext.userDataDir) {
                     const personaManager = require('../skills/core/persona');
@@ -152,20 +152,11 @@ ${text}`;
                     }
                 }
 
-                const optionalSkillsConfig = process.env.OPTIONAL_SKILLS || '';
-                const enabledOptionalSkills = optionalSkillsConfig.split(',').map(s => s.trim().toLowerCase()).filter(s => s !== '');
+                const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', personaSkills);
 
-                // Define the list of dynamically loadable optional skills
-                const ALL_OPTIONAL_SKILLS = ['git.md', 'image-prompt.md', 'moltbot.md', 'spotify.md', 'youtube.md'];
-
-                // Filter the mdFiles: keep if it's NOT in ALL_OPTIONAL_SKILLS (meaning it's mandatory), 
-                // OR if it IS in ALL_OPTIONAL_SKILLS and is enabled in the .env OR by persona
                 const filteredMdFiles = mdFiles.filter(file => {
-                    const isOptional = ALL_OPTIONAL_SKILLS.includes(file);
-                    if (!isOptional) return true; // Mandatory skill
-
                     const baseName = file.replace('.md', '').toLowerCase();
-                    return enabledOptionalSkills.includes(baseName) || personaSkills.includes(baseName);
+                    return enabledSkills.has(baseName);
                 });
 
                 console.log(`📡 [ProtocolFormatter] 正在平行讀取 ${filteredMdFiles.length} 個技能說明書...`);

@@ -306,16 +306,10 @@ class GolemBrain {
      * 供 Dashboard 的「注入技能書」按鈕使用
      */
     async reloadSkills() {
-        let { systemPrompt, skillMemoryText } = await ProtocolFormatter.buildSystemPrompt(true, { userDataDir: this.userDataDir });
-
-        if (skillMemoryText) {
-            await this.memorize(skillMemoryText, { type: 'system_skills', source: 'dashboard_reload' });
-            console.log(`🧠 [Memory] 已成功將技能載入長期記憶中！(Dashboard 觸發)`);
-        }
-
-        const compressedPrompt = ProtocolFormatter.compress(systemPrompt);
-        await this.sendMessage(compressedPrompt, false);
-        console.log(`📡 [Brain] 技能書已重新注入 Gemini (Dashboard 觸發)。`);
+        // 只清除快取，讓 .env 的技能設定生效
+        // 實際注入由重啟後的 _injectSystemPrompt 負責
+        ProtocolFormatter._lastScanTime = 0;
+        console.log(`🔄 [Brain] 技能快取已清除，等待重啟後重新載入。`);
     }
 
     /**
