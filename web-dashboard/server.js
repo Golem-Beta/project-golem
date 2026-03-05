@@ -599,6 +599,35 @@ class WebServer {
             }
         });
 
+        // 🎭 新增人格樣板 API
+        this.app.post('/api/persona/create', (req, res) => {
+            try {
+                const { id, name, description, icon, aiName, userName, role, tone, tags } = req.body;
+                if (!id || !name) return res.status(400).json({ success: false, error: 'Missing id or name' });
+
+                const personasDir = path.resolve(process.cwd(), 'personas');
+                if (!fs.existsSync(personasDir)) fs.mkdirSync(personasDir, { recursive: true });
+
+                const safeId = id.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+                const filePath = path.join(personasDir, `${safeId}.md`);
+                if (fs.existsSync(filePath)) {
+                    return res.status(409).json({ success: false, error: `檔案 ${safeId}.md 已存在` });
+                }
+
+                const tagsArray = Array.isArray(tags) ? tags : (tags || '').split(',').map(s => s.trim()).filter(Boolean);
+                const tagsYaml = tagsArray.length > 0 ? `[${tagsArray.map(t => `"${t}"`).join(', ')}]` : '[]';
+
+                const content = `---\nname: "${name}"\ndescription: "${description || ''}"\nicon: "${icon || 'BrainCircuit'}"\naiName: "${aiName || 'Golem'}"\nuserName: "${userName || 'Traveler'}"\ntone: "${tone || '預設口氣'}"\ntags: ${tagsYaml}\nskills: []\n---\n${role || ''}\n`;
+
+                fs.writeFileSync(filePath, content, 'utf8');
+                console.log(`🎭 [WebServer] New persona created: ${safeId}.md`);
+                return res.json({ success: true, id: safeId });
+            } catch (e) {
+                console.error('Failed to create persona:', e);
+                return res.status(500).json({ success: false, error: e.message });
+            }
+        });
+
         this.app.post('/api/system/reload', (req, res) => {
             console.log("🔄 [WebServer] Received reload request. Restarting system...");
             res.json({ success: true, message: "System is restarting..." });

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -24,6 +24,9 @@ import {
     Zap,
     RefreshCcw,
     TriangleAlert,
+    Plus,
+    CheckCircle2,
+    AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +43,15 @@ interface Preset {
     skills: string[];
 }
 
+interface CurrentPersona {
+    aiName: string;
+    userName: string;
+    currentRole: string;
+    tone: string;
+    skills: string[];
+    isNew?: boolean;
+}
+
 const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
     BrainCircuit,
     Cpu,
@@ -48,6 +60,8 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
     User,
     Settings2,
 };
+
+const ICON_OPTIONS = ["BrainCircuit", "Cpu", "Palette", "Sparkles", "User", "Settings2"];
 
 // ── Inject Confirm Dialog ────────────────────────────────────────────────────
 function InjectPersonaConfirmDialog({
@@ -73,7 +87,6 @@ function InjectPersonaConfirmDialog({
                         系統將儲存目前的人格設定，並完整重啟 Golem，使人格變更正確載入。
                     </DialogDescription>
                 </DialogHeader>
-
                 <div className="space-y-2">
                     <div className="flex items-start gap-2 rounded-lg bg-gray-800/60 border border-gray-700/50 px-3 py-2.5">
                         <TriangleAlert className="w-3.5 h-3.5 text-gray-500 mt-0.5 flex-shrink-0" />
@@ -88,7 +101,6 @@ function InjectPersonaConfirmDialog({
                         </ol>
                     </div>
                 </div>
-
                 <DialogFooter className="gap-2 sm:gap-2">
                     <Button
                         variant="outline"
@@ -140,7 +152,201 @@ function InjectPersonaDoneDialog({ open, onOpenChange }: { open: boolean; onOpen
     );
 }
 
+// ── Create Persona Dialog ────────────────────────────────────────────────────
+function CreatePersonaDialog({
+    open,
+    onOpenChange,
+    onCreated,
+}: {
+    open: boolean;
+    onOpenChange: (v: boolean) => void;
+    onCreated: () => void;
+}) {
+    const [id, setId] = useState("");
+    const [name, setName] = useState("");
+    const [description, setDescription] = useState("");
+    const [icon, setIcon] = useState("BrainCircuit");
+    const [aiName, setAiName] = useState("Golem");
+    const [userName, setUserName] = useState("Traveler");
+    const [role, setRole] = useState("");
+    const [tone, setTone] = useState("");
+    const [tags, setTags] = useState("");
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const reset = () => {
+        setId(""); setName(""); setDescription(""); setIcon("BrainCircuit");
+        setAiName("Golem"); setUserName("Traveler"); setRole(""); setTone(""); setTags("");
+        setError(null);
+    };
+
+    const handleClose = (v: boolean) => {
+        if (!v) reset();
+        onOpenChange(v);
+    };
+
+    const handleSubmit = async () => {
+        if (!id.trim() || !name.trim()) { setError("請填寫 ID 與名稱"); return; }
+        setIsLoading(true);
+        setError(null);
+        try {
+            const res = await fetch("/api/persona/create", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: id.trim(), name: name.trim(), description, icon, aiName, userName, role, tone, tags }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                reset();
+                onOpenChange(false);
+                onCreated();
+            } else {
+                setError(data.error || "建立失敗");
+            }
+        } catch {
+            setError("請求發送失敗");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fieldCls = "w-full bg-gray-950 border border-gray-800 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all placeholder:text-gray-600";
+
+    return (
+        <Dialog open={open} onOpenChange={isLoading ? undefined : handleClose}>
+            <DialogContent showCloseButton={!isLoading} className="bg-gray-900 border-gray-700 text-white max-w-lg max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <div className="w-10 h-10 rounded-xl border bg-purple-500/10 border-purple-500/20 flex items-center justify-center mb-2">
+                        <Plus className="w-5 h-5 text-purple-400" />
+                    </div>
+                    <DialogTitle className="text-white text-base">新增人格樣板</DialogTitle>
+                    <DialogDescription className="text-gray-400 text-sm">
+                        建立新的 persona .md 樣板，建立後即可在此頁面套用。
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 py-2">
+                    {/* ID & Name */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1.5">檔案 ID <span className="text-red-400">*</span></label>
+                            <input value={id} onChange={e => setId(e.target.value)} placeholder="my_persona" className={fieldCls} />
+                            <p className="text-[10px] text-gray-600 mt-1">英數字與底線，自動轉小寫</p>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1.5">顯示名稱 <span className="text-red-400">*</span></label>
+                            <input value={name} onChange={e => setName(e.target.value)} placeholder="我的人格" className={fieldCls} />
+                        </div>
+                    </div>
+
+                    {/* Description */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-400 mb-1.5">簡短描述</label>
+                        <input value={description} onChange={e => setDescription(e.target.value)} placeholder="一句話描述這個人格的特色" className={fieldCls} />
+                    </div>
+
+                    {/* Icon */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-400 mb-1.5">圖示</label>
+                        <div className="flex flex-wrap gap-2">
+                            {ICON_OPTIONS.map(opt => {
+                                const Ico = ICON_MAP[opt];
+                                return (
+                                    <button
+                                        key={opt}
+                                        onClick={() => setIcon(opt)}
+                                        className={cn(
+                                            "p-2.5 rounded-xl border transition-all",
+                                            icon === opt
+                                                ? "bg-purple-500/20 border-purple-500/50 text-purple-300"
+                                                : "bg-gray-800 border-gray-700 text-gray-400 hover:border-gray-600"
+                                        )}
+                                        title={opt}
+                                    >
+                                        <Ico className="w-4 h-4" />
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* AI Name & User Name */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1.5">AI 名稱</label>
+                            <input value={aiName} onChange={e => setAiName(e.target.value)} placeholder="Golem" className={fieldCls} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-400 mb-1.5">使用者稱呼</label>
+                            <input value={userName} onChange={e => setUserName(e.target.value)} placeholder="Traveler" className={fieldCls} />
+                        </div>
+                    </div>
+
+                    {/* Role */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-400 mb-1.5">任務定位 &amp; 人設背景</label>
+                        <textarea
+                            value={role}
+                            onChange={e => setRole(e.target.value)}
+                            placeholder="描述這個人格的身份背景、任務與個性..."
+                            className={`${fieldCls} resize-y min-h-[90px]`}
+                        />
+                    </div>
+
+                    {/* Tone */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-400 mb-1.5">語言風格 &amp; 語氣</label>
+                        <input value={tone} onChange={e => setTone(e.target.value)} placeholder="例如：活潑幽默、直接果斷" className={fieldCls} />
+                    </div>
+
+                    {/* Tags */}
+                    <div>
+                        <label className="block text-xs font-medium text-gray-400 mb-1.5">標籤（逗號分隔）</label>
+                        <input value={tags} onChange={e => setTags(e.target.value)} placeholder="生產力, 助手, 專業" className={fieldCls} />
+                    </div>
+
+                    {error && (
+                        <div className="flex items-center gap-2 text-red-400 text-sm bg-red-950/20 border border-red-900/30 rounded-lg px-3 py-2">
+                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                            {error}
+                        </div>
+                    )}
+                </div>
+
+                <DialogFooter className="gap-2 sm:gap-2 pt-2">
+                    <Button
+                        variant="outline"
+                        className="flex-1 bg-transparent border-gray-800 text-gray-500 hover:bg-gray-800 hover:text-gray-300"
+                        onClick={() => handleClose(false)}
+                        disabled={isLoading}
+                    >
+                        取消
+                    </Button>
+                    <Button
+                        className="flex-1 bg-purple-700 hover:bg-purple-600 text-white"
+                        onClick={handleSubmit}
+                        disabled={isLoading}
+                    >
+                        {isLoading ? (
+                            <span className="flex items-center gap-1.5">
+                                <RefreshCcw className="w-3.5 h-3.5 animate-spin" />
+                                建立中...
+                            </span>
+                        ) : (
+                            <span className="flex items-center gap-1.5">
+                                <Plus className="w-3.5 h-3.5" />
+                                建立人格
+                            </span>
+                        )}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
 export default function PersonaPage() {
+    const [currentPersona, setCurrentPersona] = useState<CurrentPersona | null>(null);
     const [templates, setTemplates] = useState<Preset[]>([]);
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -154,8 +360,16 @@ export default function PersonaPage() {
     const [isInjecting, setIsInjecting] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [showDone, setShowDone] = useState(false);
+    const [showCreate, setShowCreate] = useState(false);
     const [hasUnsyncedChanges, setHasUnsyncedChanges] = useState(false);
     const [statusMsg, setStatusMsg] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null);
+
+    const loadTemplates = useCallback(() => {
+        fetch("/api/golems/templates")
+            .then((r) => r.json())
+            .then((data) => { if (data.templates) setTemplates(data.templates); })
+            .catch(() => { });
+    }, []);
 
     // Load current persona on mount
     useEffect(() => {
@@ -163,6 +377,7 @@ export default function PersonaPage() {
             .then((r) => r.json())
             .then((data) => {
                 if (data && !data.error) {
+                    setCurrentPersona(data);
                     setAiName(data.aiName || "Golem");
                     setUserName(data.userName || "Traveler");
                     setRole(data.currentRole || "一個擁有長期記憶與自主意識的 AI 助手");
@@ -172,15 +387,7 @@ export default function PersonaPage() {
             .catch(() => { });
     }, []);
 
-    // Load templates
-    useEffect(() => {
-        fetch("/api/golems/templates")
-            .then((r) => r.json())
-            .then((data) => {
-                if (data.templates) setTemplates(data.templates);
-            })
-            .catch(() => { });
-    }, []);
+    useEffect(() => { loadTemplates(); }, [loadTemplates]);
 
     const allTags = Array.from(new Set(templates.flatMap((t) => t.tags || [])));
 
@@ -238,10 +445,10 @@ export default function PersonaPage() {
     return (
         <>
             <div className="flex-1 overflow-auto bg-gray-950 p-6 flex flex-col text-white">
-                <div className="max-w-6xl w-full mx-auto pb-12 pt-4">
+                <div className="max-w-6xl w-full mx-auto pb-12 pt-4 space-y-8">
 
-                    {/* Header */}
-                    <div className="flex items-center justify-between mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+                    {/* ── Header ─────────────────────────────────────────── */}
+                    <div className="flex items-center justify-between animate-in fade-in slide-in-from-top-4 duration-500">
                         <div className="flex items-center gap-4">
                             <div className="inline-flex items-center justify-center p-3 bg-purple-950/50 border border-purple-800/50 rounded-xl shadow-[0_0_20px_-5px_rgba(168,85,247,0.4)]">
                                 <User className="w-6 h-6 text-purple-400" />
@@ -260,43 +467,86 @@ export default function PersonaPage() {
                                 ? "bg-amber-500/20 text-amber-300 border border-amber-500/50 hover:bg-amber-500/30 animate-pulse"
                                 : "bg-purple-500/10 text-purple-400 border border-purple-500/30 hover:bg-purple-500/20"
                                 } ${isInjecting ? "opacity-60 cursor-not-allowed" : ""}`}
-                            title="將目前人格設定注入 Golem 並重啟"
                         >
                             <Zap className={`w-4 h-4 ${isInjecting ? "animate-pulse" : ""}`} />
                             {isInjecting ? "注入中..." : "注入人格"}
                         </button>
                     </div>
 
+                    {/* ── Current Persona Card ────────────────────────────── */}
+                    {currentPersona && (
+                        <div className="animate-in fade-in slide-in-from-top-2 duration-500 delay-100">
+                            <div className="bg-gray-900/60 backdrop-blur-sm border border-purple-900/30 rounded-2xl p-5 relative overflow-hidden">
+                                <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-purple-600 via-blue-500 to-cyan-400" />
+                                <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+                                    {/* Avatar area */}
+                                    <div className="flex-shrink-0 flex items-center gap-4">
+                                        <div className="w-14 h-14 rounded-2xl bg-purple-900/40 border border-purple-700/30 flex items-center justify-center shadow-lg">
+                                            <User className="w-7 h-7 text-purple-300" />
+                                        </div>
+                                        <div className="sm:hidden">
+                                            <p className="text-xs text-purple-400/70 font-mono uppercase tracking-widest mb-0.5">目前人格</p>
+                                            <p className="text-xl font-bold text-white">{currentPersona.aiName}</p>
+                                            <p className="text-sm text-gray-500">稱呼你為「{currentPersona.userName}」</p>
+                                        </div>
+                                    </div>
+                                    {/* Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="hidden sm:block mb-3">
+                                            <p className="text-xs text-purple-400/70 font-mono uppercase tracking-widest mb-0.5">目前人格</p>
+                                            <p className="text-xl font-bold text-white">{currentPersona.aiName} <span className="text-sm font-normal text-gray-500">· 稱呼你為「{currentPersona.userName}」</span></p>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div className="bg-gray-950/50 border border-gray-800/50 rounded-xl px-4 py-3">
+                                                <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-1">語言風格</p>
+                                                <p className="text-sm text-gray-300 line-clamp-2">{currentPersona.tone || "—"}</p>
+                                            </div>
+                                            <div className="bg-gray-950/50 border border-gray-800/50 rounded-xl px-4 py-3 sm:col-span-1">
+                                                <p className="text-[10px] text-gray-500 font-medium uppercase tracking-wider mb-1">任務定位</p>
+                                                <p className="text-sm text-gray-300 line-clamp-2">{currentPersona.currentRole || "—"}</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {/* Status badge */}
+                                    <div className="flex-shrink-0">
+                                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-green-900/20 border border-green-800/30 rounded-full">
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-green-400" />
+                                            <span className="text-xs text-green-400 font-medium">運行中</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Status Message */}
                     {statusMsg && (
-                        <div
-                            className={`mb-6 px-4 py-3 rounded-lg flex items-start gap-2 text-sm border ${statusMsg.type === "success"
-                                ? "bg-green-950/30 border-green-900/50 text-green-400"
-                                : statusMsg.type === "info"
-                                    ? "bg-blue-950/30 border-blue-900/50 text-blue-400"
-                                    : "bg-red-950/30 border-red-900/50 text-red-400"
-                                }`}
-                        >
+                        <div className={`px-4 py-3 rounded-lg flex items-start gap-2 text-sm border ${statusMsg.type === "success"
+                            ? "bg-green-950/30 border-green-900/50 text-green-400"
+                            : statusMsg.type === "info"
+                                ? "bg-blue-950/30 border-blue-900/50 text-blue-400"
+                                : "bg-red-950/30 border-red-900/50 text-red-400"
+                            }`}>
+                            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                             <p>{statusMsg.text}</p>
                         </div>
                     )}
 
+                    {/* ── Main Grid ──────────────────────────────────────── */}
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-                        {/* Left Column: Form (Sticky) */}
+                        {/* Left: Form */}
                         <div className="lg:col-span-5 space-y-5 lg:sticky lg:top-8 animate-in fade-in slide-in-from-left-8 duration-700 delay-150">
-                            <div className="flex items-center gap-3 px-1">
+                            <div className="flex items-center gap-2 px-1">
                                 <Settings2 className="w-5 h-5 text-purple-400" />
-                                <h2 className="text-lg font-semibold text-white">參數定義 (Parameters)</h2>
+                                <h2 className="text-base font-semibold text-white">參數定義 (Parameters)</h2>
                             </div>
 
                             {/* Basic Info */}
-                            <div className="bg-gray-900/80 backdrop-blur-sm border border-gray-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+                            <div className="bg-gray-900/80 backdrop-blur-sm border border-gray-800 rounded-2xl p-5 relative overflow-hidden">
                                 <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-blue-600 to-cyan-400" />
-                                <div className="space-y-5">
+                                <div className="space-y-4">
                                     <div>
-                                        <label htmlFor="aiName" className="block text-sm font-medium text-gray-400 mb-2">
-                                            AI 名稱
-                                        </label>
+                                        <label htmlFor="aiName" className="block text-xs font-medium text-gray-400 mb-1.5">AI 名稱</label>
                                         <input
                                             id="aiName"
                                             value={aiName}
@@ -306,9 +556,7 @@ export default function PersonaPage() {
                                         />
                                     </div>
                                     <div>
-                                        <label htmlFor="userName" className="block text-sm font-medium text-gray-400 mb-2">
-                                            你的稱呼
-                                        </label>
+                                        <label htmlFor="userName" className="block text-xs font-medium text-gray-400 mb-1.5">你的稱呼</label>
                                         <input
                                             id="userName"
                                             value={userName}
@@ -321,24 +569,20 @@ export default function PersonaPage() {
                             </div>
 
                             {/* Core Persona */}
-                            <div className="bg-gray-900/80 backdrop-blur-sm border border-gray-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+                            <div className="bg-gray-900/80 backdrop-blur-sm border border-gray-800 rounded-2xl p-5 relative overflow-hidden">
                                 <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-500 to-blue-500" />
-                                <div className="space-y-5">
+                                <div className="space-y-4">
                                     <div>
-                                        <label htmlFor="role" className="block text-sm font-medium text-gray-400 mb-2">
-                                            任務定位 &amp; 人設背景
-                                        </label>
+                                        <label htmlFor="role" className="block text-xs font-medium text-gray-400 mb-1.5">任務定位 &amp; 人設背景</label>
                                         <textarea
                                             id="role"
                                             value={role}
                                             onChange={(e) => { setRole(e.target.value); markChanged(); }}
-                                            className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all resize-y min-h-[130px]"
+                                            className="w-full bg-gray-950 border border-gray-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500 transition-all resize-y min-h-[120px] text-sm"
                                         />
                                     </div>
                                     <div>
-                                        <label htmlFor="tone" className="block text-sm font-medium text-gray-400 mb-2">
-                                            語言風格 &amp; 語氣
-                                        </label>
+                                        <label htmlFor="tone" className="block text-xs font-medium text-gray-400 mb-1.5">語言風格 &amp; 語氣</label>
                                         <input
                                             id="tone"
                                             value={tone}
@@ -349,7 +593,7 @@ export default function PersonaPage() {
                                 </div>
                             </div>
 
-                            {/* Inject Button (also at bottom of form for convenience) */}
+                            {/* Inject Button */}
                             <Button
                                 onClick={() => setShowConfirm(true)}
                                 disabled={isInjecting}
@@ -369,11 +613,11 @@ export default function PersonaPage() {
                             </Button>
                         </div>
 
-                        {/* Right Column: Templates */}
+                        {/* Right: Templates */}
                         <div className="lg:col-span-7 space-y-5 animate-in fade-in slide-in-from-right-8 duration-700 delay-300">
                             {/* Search & Tags */}
-                            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5 shadow-sm">
-                                <div className="flex flex-col md:flex-row gap-4 mb-5">
+                            <div className="bg-gray-900/50 border border-gray-800 rounded-2xl p-5">
+                                <div className="flex flex-col md:flex-row gap-3 mb-4">
                                     <div className="relative flex-1">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                                         <input
@@ -384,45 +628,40 @@ export default function PersonaPage() {
                                             className="w-full bg-gray-950 border border-gray-800 rounded-xl pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/30 transition-all"
                                         />
                                         {searchTerm && (
-                                            <button
-                                                onClick={() => setSearchTerm("")}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-gray-800 rounded-md"
-                                            >
+                                            <button onClick={() => setSearchTerm("")} className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-gray-800 rounded-md">
                                                 <X className="w-3 h-3 text-gray-500" />
                                             </button>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-2 text-sm font-medium text-gray-400">
+                                    <button
+                                        onClick={() => setShowCreate(true)}
+                                        className="flex items-center gap-1.5 px-3 py-2 bg-purple-900/30 border border-purple-700/40 text-purple-300 hover:bg-purple-900/50 text-sm font-medium rounded-xl transition-all flex-shrink-0"
+                                    >
+                                        <Plus className="w-4 h-4" />
+                                        新增人格
+                                    </button>
+                                    <div className="flex items-center gap-1.5 text-sm text-gray-500">
                                         <Filter className="w-4 h-4" />
-                                        篩選標籤
                                     </div>
                                 </div>
-
                                 <div className="flex flex-wrap gap-2">
                                     <button
                                         onClick={() => setSelectedTag(null)}
-                                        className={cn(
-                                            "px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
+                                        className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all",
                                             selectedTag === null
-                                                ? "bg-purple-500 text-white shadow-lg shadow-purple-900/20"
-                                                : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
-                                        )}
-                                    >
-                                        全部
-                                    </button>
-                                    {allTags.map((tag) => (
+                                                ? "bg-purple-500 text-white shadow-lg"
+                                                : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white")}
+                                    >全部</button>
+                                    {allTags.map(tag => (
                                         <button
                                             key={tag}
                                             onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-                                            className={cn(
-                                                "px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5",
+                                            className={cn("px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1",
                                                 selectedTag === tag
-                                                    ? "bg-blue-500 text-white shadow-lg shadow-blue-900/20"
-                                                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
-                                            )}
+                                                    ? "bg-blue-500 text-white shadow-lg"
+                                                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white")}
                                         >
-                                            <Tag className="w-3 h-3" />
-                                            {tag}
+                                            <Tag className="w-3 h-3" />{tag}
                                         </button>
                                     ))}
                                 </div>
@@ -430,80 +669,56 @@ export default function PersonaPage() {
 
                             {/* Templates Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {filteredTemplates.length > 0 ? (
-                                    filteredTemplates.map((preset) => (
-                                        <button
-                                            key={preset.id}
-                                            onClick={() => applyPreset(preset)}
-                                            className={cn(
-                                                "text-left p-5 rounded-2xl border transition-all duration-300 group relative overflow-hidden flex flex-col h-full",
+                                {filteredTemplates.length > 0 ? filteredTemplates.map((preset) => (
+                                    <button
+                                        key={preset.id}
+                                        onClick={() => applyPreset(preset)}
+                                        className={cn(
+                                            "text-left p-5 rounded-2xl border transition-all duration-300 group relative overflow-hidden flex flex-col h-full",
+                                            activePresetId === preset.id
+                                                ? "bg-purple-950/20 border-purple-500/50 ring-1 ring-purple-500/30 shadow-[0_0_25px_-5px_rgba(168,85,247,0.2)]"
+                                                : "bg-gray-900 border-gray-800 hover:border-gray-700 hover:bg-gray-800/80"
+                                        )}
+                                    >
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className={cn(
+                                                "p-3 rounded-xl transition-colors",
                                                 activePresetId === preset.id
-                                                    ? "bg-purple-950/20 border-purple-500/50 ring-1 ring-purple-500/30 shadow-[0_0_25px_-5px_rgba(168,85,247,0.2)]"
-                                                    : "bg-gray-900 border-gray-800 hover:border-gray-700 hover:bg-gray-800/80"
-                                            )}
-                                        >
-                                            <div className="flex items-start justify-between mb-4">
-                                                <div
-                                                    className={cn(
-                                                        "p-3 rounded-xl transition-colors",
-                                                        activePresetId === preset.id
-                                                            ? "bg-purple-500 text-white shadow-lg shadow-purple-900/40"
-                                                            : "bg-gray-800 text-gray-400 group-hover:text-purple-400"
-                                                    )}
-                                                >
-                                                    {(() => {
-                                                        const IconComponent = ICON_MAP[preset.icon] || ICON_MAP.BrainCircuit;
-                                                        return <IconComponent className="w-6 h-6" />;
-                                                    })()}
-                                                </div>
-                                                {activePresetId === preset.id && (
-                                                    <div className="bg-purple-500/20 border border-purple-500/30 text-purple-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                                                        Selected
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <h4
-                                                className={cn(
-                                                    "text-lg font-bold mb-2 transition-colors",
-                                                    activePresetId === preset.id
-                                                        ? "text-white"
-                                                        : "text-gray-200 group-hover:text-white"
-                                                )}
-                                            >
-                                                {preset.name}
-                                            </h4>
-
-                                            <p className="text-sm text-gray-400 leading-relaxed mb-4 flex-1">
-                                                {preset.description}
-                                            </p>
-
-                                            <div className="flex flex-wrap gap-1.5 mt-auto">
-                                                {preset.tags?.map((tag) => (
-                                                    <span
-                                                        key={tag}
-                                                        className="px-2 py-0.5 bg-gray-950/50 border border-gray-800 text-[10px] text-gray-500 rounded-md"
-                                                    >
-                                                        #{tag}
-                                                    </span>
-                                                ))}
-                                            </div>
-
-                                            {/* Background Decoration */}
-                                            <div
-                                                className={cn(
-                                                    "absolute -right-4 -bottom-4 opacity-[0.03] transition-opacity",
-                                                    activePresetId === preset.id ? "opacity-[0.08]" : ""
-                                                )}
-                                            >
+                                                    ? "bg-purple-500 text-white shadow-lg shadow-purple-900/40"
+                                                    : "bg-gray-800 text-gray-400 group-hover:text-purple-400"
+                                            )}>
                                                 {(() => {
-                                                    const IconComponent = ICON_MAP[preset.icon] || ICON_MAP.BrainCircuit;
-                                                    return <IconComponent className="w-24 h-24" />;
+                                                    const Ico = ICON_MAP[preset.icon] || ICON_MAP.BrainCircuit;
+                                                    return <Ico className="w-6 h-6" />;
                                                 })()}
                                             </div>
-                                        </button>
-                                    ))
-                                ) : (
+                                            {activePresetId === preset.id && (
+                                                <div className="bg-purple-500/20 border border-purple-500/30 text-purple-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                                    Selected
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <h4 className={cn("text-base font-bold mb-1.5 transition-colors",
+                                            activePresetId === preset.id ? "text-white" : "text-gray-200 group-hover:text-white")}>
+                                            {preset.name}
+                                        </h4>
+                                        <p className="text-sm text-gray-400 leading-relaxed mb-4 flex-1">{preset.description}</p>
+
+                                        <div className="flex flex-wrap gap-1.5 mt-auto">
+                                            {preset.tags?.map(tag => (
+                                                <span key={tag} className="px-2 py-0.5 bg-gray-950/50 border border-gray-800 text-[10px] text-gray-500 rounded-md">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+
+                                        <div className={cn("absolute -right-4 -bottom-4 opacity-[0.03] transition-opacity",
+                                            activePresetId === preset.id ? "opacity-[0.08]" : "")}>
+                                            {(() => { const Ico = ICON_MAP[preset.icon] || ICON_MAP.BrainCircuit; return <Ico className="w-24 h-24" />; })()}
+                                        </div>
+                                    </button>
+                                )) : (
                                     <div className="col-span-full py-20 text-center bg-gray-900/20 border border-dashed border-gray-800 rounded-2xl flex flex-col items-center">
                                         <Search className="w-10 h-10 text-gray-700 mb-3" />
                                         <p className="text-gray-500">找不到符合條件的樣板</p>
@@ -528,6 +743,11 @@ export default function PersonaPage() {
                 isLoading={isInjecting}
             />
             <InjectPersonaDoneDialog open={showDone} onOpenChange={setShowDone} />
+            <CreatePersonaDialog
+                open={showCreate}
+                onOpenChange={setShowCreate}
+                onCreated={loadTemplates}
+            />
         </>
     );
 }
