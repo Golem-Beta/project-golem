@@ -130,6 +130,7 @@ function getOrCreateGolem(golemId) {
 
     const boundBot = telegramBots.get(golemId) || (telegramBots.size > 0 ? telegramBots.values().next().value : null);
     autonomy.setIntegrations(boundBot, dcClient, convoManager);
+    brain.tgBot = boundBot; // expose for dashboard notifications
 
     const instance = { brain, controller, autonomy, convoManager };
     activeGolems.set(golemId, instance);
@@ -168,6 +169,26 @@ console.log(`🛡️ [Flood Guard] 系統啟動時間: ${new Date(BOOT_TIME).toL
         } else {
             instance.brain.status = 'running';
             await instance.brain.init();
+
+            // 📣 通知 TG 重啟完成
+            const tgBot = instance.brain.tgBot;
+            if (tgBot) {
+                const gCfg = tgBot.golemConfig || {};
+                const targetId = gCfg.adminId || gCfg.chatId;
+                if (targetId) {
+                    const { resolveEnabledSkills, MANDATORY_SKILLS, OPTIONAL_SKILLS: OPT_LIST } = require('./src/skills/skillsConfig');
+                    const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', []);
+                    const enabledOptional = OPT_LIST.filter(s => enabledSkills.has(s));
+                    const skillSummary = enabledOptional.length > 0
+                        ? `\n✅ 選用技能: ${enabledOptional.join(', ')}`
+                        : '';
+                    tgBot.sendMessage(
+                        targetId,
+                        `✅ *[${instance.brain.golemId}] Golem 重啟完成！*\n已載入 ${MANDATORY_SKILLS.length} 個必要技能${skillSummary}\n\n記憶與技能書載入成功，可以繼續使用。`,
+                        { parse_mode: 'Markdown' }
+                    ).catch(e => console.warn(`⚠️ [System] TG boot notify failed [${instance.brain.golemId}]:`, e.message));
+                }
+            }
         }
     }));
 
