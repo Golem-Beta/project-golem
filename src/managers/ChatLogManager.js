@@ -435,6 +435,41 @@ class ChatLogManager {
      * @param {number} [limit] - 最多讀取幾個檔案 (從最新開始)
      * @returns {Array<{date: string, content: string}>}
      */
+    /**
+     * 讀取最近的原始 hourly 日誌 (Tier 0)，供無壓縮時 fallback 使用
+     * @param {number} [limit] - 最多讀取幾個 hourly 檔案 (從最新, null = 全部)
+     * @returns {string} 格式化後的對話文字，若無內容則回傳空字串
+     */
+    readRecentHourly(limit = null) {
+        const dir = this.dirs.hourly;
+        if (!dir || !fs.existsSync(dir)) return '';
+
+        try {
+            let files = fs.readdirSync(dir)
+                .filter(f => f.length === 14 && f.endsWith('.log')) // YYYYMMDDHH.log
+                .sort();
+
+            if (limit) files = files.slice(-limit);
+
+            let result = '';
+            files.forEach(file => {
+                try {
+                    const logs = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+                    logs.forEach(l => {
+                        const time = new Date(l.timestamp).toLocaleString('zh-TW', { hour12: false });
+                        result += `[${time}] ${l.sender}: ${l.content}\n`;
+                    });
+                } catch (e) {
+                    console.warn(`⚠️ [LogManager] readRecentHourly 解析失敗，略過: ${file} — ${e.message}`);
+                }
+            });
+
+            return result.trim();
+        } catch (e) {
+            return '';
+        }
+    }
+
     readTier(tier, limit = null) {
         const dir = this.dirs[tier];
         if (!dir || !fs.existsSync(dir)) return [];

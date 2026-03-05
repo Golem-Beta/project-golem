@@ -395,6 +395,20 @@ class GolemBrain {
                     const memoryPulse = `【指令：載入長期記憶與背景壓縮】\n以下是你過去對話的多層次彙總精華${tierDesc}。請完整閱讀並內化這些背景，將其視為你目前已知的所有先驗知識與決策紀錄：\n${historicalMemory}`;
                     await this.sendMessage(memoryPulse, false);
                     console.log(`🧠 [Brain] 階段二：已注入多層記憶 (${tierCounts.join(', ')})。`);
+                } else {
+                    // 🕐 Tier 0 Fallback：無任何壓縮摘要時，直接載入全部 hourly 原始對話
+                    const rawMemory = this.chatLogManager.readRecentHourly();
+                    if (rawMemory) {
+                        const MAX_RAW_CHARS = 200000;
+                        const safeRaw = rawMemory.length > MAX_RAW_CHARS
+                            ? rawMemory.slice(-MAX_RAW_CHARS)
+                            : rawMemory;
+                        const rawPulse = `【指令：載入近期原始對話紀錄】\n目前尚無任何壓縮摘要，以下是你最近的完整對話原文。請完整閱讀並視為你已知的先驗背景：\n${safeRaw}`;
+                        await this.sendMessage(rawPulse, false);
+                        console.log(`🕐 [Brain] 階段二(Fallback)：已注入 Tier 0 原始 hourly 對話 (${safeRaw.length} chars)。`);
+                    } else {
+                        console.log(`ℹ️ [Brain] 階段二：無任何歷史記憶可注入 (全新會話)。`);
+                    }
                 }
             } catch (e) {
                 console.warn(`⚠️ [Brain] 歷史記憶掃描或注入失敗: ${e.message}`);
