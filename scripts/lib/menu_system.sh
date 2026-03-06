@@ -19,36 +19,31 @@ show_menu() {
     echo ""
     echo -e "  ${BOLD}${YELLOW}⚡ 核心指令${NC}"
     echo -e "  ${CYAN}───────────────────────────────────────────────${NC}"
-    echo -e "   ${BOLD}[0]${NC}  🚀 啟動系統 ${DIM}(Start Golem & Dashboard)${NC}"
-    echo -e "   ${BOLD}[K]${NC}  🛑 停止系統 ${DIM}(Stop All Processes)${NC}"
-    echo -e "   ${BOLD}[1]${NC}  📦 安裝與更新 ${DIM}(Install Deps & Build)${NC}"
-    echo -e "   ${BOLD}[I]${NC}  🧹 完全初始化 ${DIM}(Reset System)${NC}"
-    echo -e "   ${BOLD}[Q]${NC}  🚪 退出${NC}"
-    echo ""
 
-    read -r -p "  👉 請輸入選項: " raw_choice
-    # Byte-level filter: 僅保留 ASCII 字母與數字
-    choice=$(echo "$raw_choice" | LC_ALL=C tr -dc 'a-zA-Z0-9' | awk '{print substr($0,1,1)}')
+    local options=()
+    options+=("Start|🚀 啟動系統 (Start Golem & Dashboard)")
+    options+=("Stop|🛑 停止系統 (Stop All Processes)")
+    options+=("Install|📦 安裝與更新 (Install Deps & Build)")
+    options+=("Init|🧹 完全初始化 (Reset System)")
+    options+=("Quit|🚪 退出")
 
-    case $choice in
-        0) launch_system ;;
-        [Kk]) stop_system; show_menu ;;
-        1) run_full_install ;;
-        [Ii]) run_clean_init; show_menu ;;
-        [Qq]) echo -e "  ${GREEN}👋 再見！${NC}"; exit 0 ;;
-        *) 
-            if [[ -n "$choice" && "$choice" =~ ^[a-zA-Z0-9]$ ]]; then
-                printf "  %b❌ 無效選項「%s」%b\n" "$RED" "$choice" "$NC"
-            else
-                printf "  %b❌ 無效輸入%b\n" "$RED" "$NC"
-            fi
-            sleep 1; show_menu ;;
+    prompt_singleselect "" "${options[@]}"
+    local choice="$SINGLESELECT_RESULT"
+
+    case "$choice" in
+        "Start")   launch_system ;;
+        "Stop")    stop_system; show_menu ;;
+        "Install") run_full_install ;;
+        "Init")    run_clean_init; show_menu ;;
+        "Quit")    echo -e "  ${GREEN}👋 再見！${NC}"; exit 0 ;;
+        *)         show_menu ;;
     esac
 }
 
 # toggle_dashboard and view_logs are now handled via Web Dashboard
 
 stop_system() {
+    local interactive="${1:-true}"
     echo ""
     echo -e "  ${YELLOW}🛑 正在停止 Golem 與 Web Dashboard...${NC}"
     local killed=0
@@ -93,7 +88,10 @@ stop_system() {
 
     log "System stopped via stop_system"
     echo ""
-    read -r -p "  按 Enter 返回主選單..."
+
+    if [ "$interactive" = true ]; then
+        read -r -p "  按 Enter 返回主選單..."
+    fi
 }
 
 launch_system() {

@@ -444,7 +444,9 @@ export default function SkillsPage() {
                                             </span>
                                             <div className="flex items-center gap-2">
                                                 {!skill.isOptional ? (
-                                                    <span className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">常駐核心</span>
+                                                    <span className="text-[9px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 px-1.5 py-0.5 rounded-md uppercase tracking-wider font-bold shadow-[0_0_10px_-2px_rgba(99,102,241,0.2)]">
+                                                        常駐核心
+                                                    </span>
                                                 ) : skill.isEnabled ? (
                                                     <span className="flex items-center gap-1 text-[10px] text-cyan-400 uppercase tracking-wider font-bold">
                                                         <CheckCircle2 className="w-3 h-3" /> 已啟用

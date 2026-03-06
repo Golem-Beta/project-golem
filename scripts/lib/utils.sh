@@ -85,10 +85,21 @@ mask_value() {
 # ─── Confirm Prompt ─────────────────────────────────────
 confirm_action() {
     local msg="${1:-確認執行?}"
-    echo -e -n " ${YELLOW}⚠ ${msg} [y/N]:${NC} "
-    read -r confirm
-    confirm=$(echo "$confirm" | xargs 2>/dev/null)
-    [[ "$confirm" =~ ^[Yy]$ ]]
+    
+    local options=()
+    options+=("Yes|是 (Proceed)")
+    options+=("No|否 (Cancel)")
+
+    # 預設選取為 No，確保安全
+    SINGLESELECT_DEFAULT="No"
+    prompt_singleselect "⚠️  ${msg}" "${options[@]}"
+    local choice="$SINGLESELECT_RESULT"
+
+    if [ "$choice" = "Yes" ]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # ─── Interactive Multi-Select Prompt ────────────────────

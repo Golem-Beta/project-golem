@@ -623,8 +623,47 @@ class WebServer {
 
                 // 系統是否已設定：優先檢查 SYSTEM_CONFIGURED 標記
                 const isSystemConfigured = envVars.SYSTEM_CONFIGURED === 'true';
-
                 const isSingleNode = (envVars.GOLEM_MODE || 'MULTI').trim().toUpperCase() === 'SINGLE';
+
+                // --- 額外獲取環境資訊 ---
+                const os = require('os');
+                const { execSync } = require('child_process');
+
+                // Node.js 與平台資訊
+                const runtime = {
+                    node: process.version,
+                    npm: 'N/A',
+                    platform: process.platform,
+                    arch: process.arch,
+                    uptime: Math.floor(process.uptime())
+                };
+                try { runtime.npm = 'v' + execSync('npm -v').toString().trim(); } catch (e) { }
+
+                // 健康檢查
+                const DOT_ENV_PATH = path.join(process.cwd(), '.env');
+                const health = {
+                    node: process.version.startsWith('v20') || process.version.startsWith('v22') || process.version.startsWith('v21') || process.version.startsWith('v23') || process.version.startsWith('v25'),
+                    env: fs.existsSync(DOT_ENV_PATH),
+                    keys: !!(envVars.GEMINI_API_KEYS && envVars.GEMINI_API_KEYS !== '你的Key1,你的Key2,你的Key3'),
+                    deps: fs.existsSync(path.join(process.cwd(), 'node_modules')),
+                    core: ['index.js', 'package.json', 'dashboard.js'].every(f => fs.existsSync(path.join(process.cwd(), f))),
+                    dashboard: fs.existsSync(path.join(process.cwd(), 'web-dashboard/node_modules')) || fs.existsSync(path.join(process.cwd(), 'web-dashboard/.next'))
+                };
+
+                // 系統資源
+                let diskUsage = 'N/A';
+                try {
+                    if (process.platform === 'darwin' || process.platform === 'linux') {
+                        const df = execSync(`df -h . | awk 'NR==2{print $4}'`).toString().trim();
+                        diskUsage = df;
+                    }
+                } catch (e) { }
+
+                const system = {
+                    totalMem: Math.floor(os.totalmem() / 1024 / 1024) + ' MB',
+                    freeMem: Math.floor(os.freemem() / 1024 / 1024) + ' MB',
+                    diskAvail: diskUsage
+                };
 
                 return res.json({
                     hasGolems: liveCount > 0 || configuredCount > 0,
@@ -632,6 +671,9 @@ class WebServer {
                     configuredCount,
                     isSystemConfigured,
                     isSingleNode,
+                    runtime,
+                    health,
+                    system
                 });
             } catch (e) {
                 console.error('[WebServer] Failed to get system status:', e);

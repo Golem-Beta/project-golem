@@ -61,32 +61,9 @@ ENVEOF
 
 # ─── Step 3: Config Wizard (simplified — Bot configs now in Web Dashboard) ───
 config_wizard() {
-    echo ""
-    echo ""
-    box_top
-    box_line_colored "  ${BOLD}${CYAN}⚙️  Web Dashboard 配置精靈${NC}"
-    box_line_colored "  ${DIM}設定系統基本選項${NC}"
-    box_sep
-    box_line_colored "  ${YELLOW}ℹ 提示: Golem 所有核心設定 (API Keys, 模式等)${NC}"
-    box_line_colored "  ${YELLOW}      現在統一透過 Web Dashboard 管理。${NC}"
-    box_line_colored "  ${DIM}      啟動後前往 http://localhost:3000${NC}"
-    box_sep
-    box_bottom
-    echo ""
-
-    # 讀取現有值
-    [ -f "$DOT_ENV_PATH" ] && source "$DOT_ENV_PATH" 2>/dev/null
-
-    echo -e "  ${BOLD}${MAGENTA}[1/1]${NC} ${BOLD}Web Dashboard${NC}"
-    SINGLESELECT_DEFAULT="${ENABLE_WEB_DASHBOARD:-true}"
-    prompt_singleselect "啟用 Web Dashboard?" \
-        "true|啟用 Dashboard (推薦)" \
-        "false|停用 Dashboard"
-    local input="$SINGLESELECT_RESULT"
-    if [[ "$input" == "true" ]]; then update_env "ENABLE_WEB_DASHBOARD" "true"; ENABLE_WEB_DASHBOARD="true"
-    elif [[ "$input" == "false" ]]; then update_env "ENABLE_WEB_DASHBOARD" "false"; ENABLE_WEB_DASHBOARD="false"; fi
-
-    echo ""
+    # 自動啟用 Web Dashboard，不顯示任何資訊
+    update_env "ENABLE_WEB_DASHBOARD" "true"
+    ENABLE_WEB_DASHBOARD="true"
 }
 
 # ─── Step 3.5: Golems Config Wizard (已遷移至 Web Dashboard) ───
@@ -187,8 +164,11 @@ run_clean_init() {
         return
     fi
 
+    # ✅ 優先停止系統服務再刪除資源
+    stop_system false
+
     echo -e "  ${CYAN}🧹 正在清理系統資料...${NC}"
-    log "Running clean init - deleting directories"
+    log "Running clean init - stopping system and deleting directories"
     
     # 刪除各項目錄
     rm -rf "$SCRIPT_DIR/node_modules" "$SCRIPT_DIR/package-lock.json"
