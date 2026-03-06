@@ -24,7 +24,8 @@ class DashboardPlugin {
         // 1. 保存原始的 Console 方法並初始化 UI 元件與管理器
         this.manager = new DashboardManager();
         // 初始化螢幕 (如果沒有禁用 TUI 則開啟)
-        this.useTUI = process.env.DISABLE_TUI !== 'true' && process.env.ENABLE_WEB_DASHBOARD !== 'true';
+        // Web Dashboard 強制啟用，停用 Terminal TUI 模式
+        this.useTUI = process.env.DISABLE_TUI !== 'true' && process.env.FORCE_TUI === 'true';
 
         if (this.useTUI) {
             this.view = new TerminalView({
@@ -48,7 +49,7 @@ class DashboardPlugin {
     }
 
     _initWebServer() {
-        if (process.env.ENABLE_WEB_DASHBOARD === 'true' && WebServer) {
+        if (WebServer) {
             try {
                 this.webServer = new WebServer(this);
             } catch (e) {

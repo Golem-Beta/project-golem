@@ -173,21 +173,17 @@ function DashboardContent({
         }
     }, [isLoadingSystem, isSystemConfigured, pathname, router]);
 
-    // Golem 建立引導：系統已設定但尚無任何 Golem，導向建立 Golem 頁
-    useEffect(() => {
-        if (isLoadingSystem || isLoadingGolems) return;
-        if (!isSystemConfigured) return; // 已由上面的 guard 處理
-        const SETUP_PATHS = ['/dashboard/system-setup', '/dashboard/agents/create', '/dashboard/setup'];
-        if (!hasGolems && !SETUP_PATHS.includes(pathname)) {
-            router.push('/dashboard/agents/create');
-        }
-    }, [isLoadingSystem, isLoadingGolems, isSystemConfigured, hasGolems, pathname, router]);
+    // (移除原本強制跳轉到 agents/create 的邏輯，改由 /dashboard 自己渲染迎新畫面)
 
-    const isSetupPage = pathname === '/dashboard/setup' || pathname === '/dashboard/system-setup' || pathname === '/dashboard/agents/create';
+    const isSetupPage = ['/dashboard/system-setup', '/dashboard/agents/create', '/dashboard/setup']
+        .some(p => pathname.startsWith(p));
+
+    // 當沒有任何 Golem 時，也當作是 Setup 階段，隱藏 Sidebar
+    const shouldHideSidebar = isSetupPage || (!isLoadingGolems && !hasGolems && pathname === '/dashboard');
 
     return (
         <div className="flex h-screen bg-gray-950 text-white overflow-hidden">
-            {!isSetupPage && <DashboardSidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />}
+            {!shouldHideSidebar && <DashboardSidebar isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen} />}
             {/* Main Content */}
             <main className="flex-1 overflow-auto bg-gray-950 flex flex-col h-screen relative">
                 {children}

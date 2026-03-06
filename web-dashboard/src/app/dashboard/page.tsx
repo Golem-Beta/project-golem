@@ -254,6 +254,30 @@ export default function DashboardPage() {
     const isBusy = isLoading;
 
     // ── 主頁面開始 ──
+    if (!isLoadingGolems && !hasGolems) {
+        return (
+            <div className="h-full flex items-center justify-center p-6 bg-gray-950">
+                <div className="max-w-md w-full text-center space-y-6 animate-in fade-in zoom-in-95 duration-500">
+                    <div className="inline-flex items-center justify-center w-24 h-24 bg-indigo-950/30 border border-indigo-900/50 rounded-[2rem] shadow-[0_0_40px_-10px_theme(colors.indigo.900)] mb-2">
+                        <BrainCircuit className="w-12 h-12 text-indigo-400" />
+                    </div>
+                    <div>
+                        <h1 className="text-3xl font-bold text-white mb-3 tracking-tight">系統已就緒</h1>
+                        <p className="text-gray-400 text-base leading-relaxed">
+                            目前尚未部署任何 Golem 實體。<br />請建立你的第一個 AI 代理人來開始使用。
+                        </p>
+                    </div>
+                    <Link href="/dashboard/agents/create" className="inline-block w-full pt-4">
+                        <Button className="w-full h-14 bg-indigo-600 hover:bg-indigo-500 text-white text-base font-semibold border-0 shadow-lg shadow-indigo-900/20 transition-all hover:scale-[1.02] hover:shadow-indigo-500/25">
+                            <UserPlus className="w-5 h-5 mr-2" />
+                            建立第一個 Golem
+                        </Button>
+                    </Link>
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="p-6 h-full flex flex-col space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -292,25 +316,7 @@ export default function DashboardPage() {
                             </div>
                         </div>
 
-                        {/* Inline Onboarding Card */}
-                        {!isLoadingGolems && !hasGolems && (
-                            <div className="mt-6 p-4 bg-indigo-950/30 border border-indigo-900/50 rounded-xl">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <BrainCircuit className="w-4 h-4 text-indigo-400" />
-                                    <span className="text-sm font-semibold text-indigo-300">系統就緒</span>
-                                </div>
-                                <p className="text-xs text-gray-400 mb-3 leading-relaxed">
-                                    尚未部署任何 Golem。<br />
-                                    點擊下方按鈕建立你的第一個 Golem 實體。
-                                </p>
-                                <Link href="/dashboard/agents/create">
-                                    <Button className="w-full h-10 text-xs font-bold bg-indigo-600/80 hover:bg-indigo-500 border-none rounded-lg transition-colors group">
-                                        <UserPlus className="w-3.5 h-3.5 mr-1.5" />
-                                        新增 Golem
-                                    </Button>
-                                </Link>
-                            </div>
-                        )}
+                        {/* Inline Onboarding Card Removed (Now handled by full-page state) */}
                     </div>
 
                     {/* 操控區 */}

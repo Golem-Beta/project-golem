@@ -95,8 +95,10 @@ const KNOWLEDGE_BASE_DIR = path.join(process.cwd(), 'golem_memory', MODE_DIR, 'k
 
 // 🔄 熱重載支援函數
 const reloadConfig = () => {
-    // 重新載入 .env
-    require('dotenv').config({ override: true });
+    // 重新載入 .env 檔案取得最新值 (不依賴 cached process.env)
+    const EnvManager = require('../utils/EnvManager');
+    const freshEnv = EnvManager.readEnv();
+    Object.assign(process.env, freshEnv);
 
     // 重新整理變數到 CONFIG
     CONFIG.TG_TOKEN = cleanEnv(process.env.TELEGRAM_TOKEN);

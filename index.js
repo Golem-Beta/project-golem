@@ -18,7 +18,23 @@
  * - 🧠 深度整合 Introspection
  * - v9.0 所有功能 (InteractiveMultiAgent, WebSkillEngine)
  */
-require('dotenv').config();
+const fs_sync = require('fs');
+const path_sync = require('path');
+
+// ── 首次啟動自動初始化 .env ────────────────────────────────────────────────
+const envPath = path_sync.resolve(__dirname, '.env');
+const envExamplePath = path_sync.resolve(__dirname, '.env.example');
+if (!fs_sync.existsSync(envPath) && fs_sync.existsSync(envExamplePath)) {
+    fs_sync.copyFileSync(envExamplePath, envPath);
+    console.log('📋 [Bootstrap] .env 不存在，已從 .env.example 複製初始設定檔。');
+    console.log('🌐 [Bootstrap] 請前往 http://localhost:3000/dashboard 完成初始化設定。');
+}
+
+try {
+    require('dotenv').config();
+} catch (e) {
+    console.error('⚠️ [Bootstrap] 尚未安裝依賴套件 (dotenv)。請確保已執行 npm install。');
+}
 
 process.on('uncaughtException', (err) => {
     console.error('🔥 [CRITICAL] Uncaught Exception:', err);
@@ -29,15 +45,12 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Reason:', reason);
 });
 
-if (process.argv.includes('dashboard')) {
-    try {
-        require('./dashboard');
-        console.log("✅ 戰術控制台已啟動 (繁體中文版)");
-    } catch (e) {
-        console.error("❌ 無法載入 Dashboard:", e.message);
-    }
-} else {
-    console.log("ℹ️  以標準模式啟動 (無 Dashboard)。若需介面請輸入 'npm start dashboard'");
+// Dashboard 強制啟用
+try {
+    require('./dashboard');
+    console.log('✅ Golem Web Dashboard 已啟動 → http://localhost:' + (process.env.DASHBOARD_PORT || 3000));
+} catch (e) {
+    console.error('❌ 無法載入 Dashboard:', e.message);
 }
 
 const fs = require('fs').promises;
