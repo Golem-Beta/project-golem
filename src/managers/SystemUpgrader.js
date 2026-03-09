@@ -114,17 +114,9 @@ class SystemUpgrader {
 
             // Use a slight timeout to let message send
             setTimeout(() => {
-                const setupShPath = path.join(process.cwd(), 'setup.sh');
-                let command = process.argv[0];
-                let args = process.argv.slice(1);
+                console.log("🚀 [Upgrader] Starting automated restart (npm run dashboard)...");
 
-                if (fs.existsSync(setupShPath)) {
-                    console.log("🚀 [Upgrader] Detecting setup.sh, using it for restart...");
-                    command = 'bash';
-                    args = [setupShPath, '--start'];
-                }
-
-                const subprocess = spawn(command, args, {
+                const subprocess = spawn('npm', ['run', 'dashboard'], {
                     detached: true,
                     stdio: 'ignore',
                     cwd: process.cwd(),

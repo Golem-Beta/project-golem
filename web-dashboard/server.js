@@ -1374,21 +1374,10 @@ class WebServer {
                     global.gracefulRestart();
                 } else {
                     const { spawn } = require('child_process');
-                    const fs = require('fs');
-                    const path = require('path');
-                    const setupShPath = path.resolve(process.cwd(), 'setup.sh');
-
-                    let command = process.argv[0];
-                    let args = process.argv.slice(1);
-
-                    if (fs.existsSync(setupShPath)) {
-                        console.log("🚀 [WebServer] Detecting setup.sh, using it for restart...");
-                        command = 'bash';
-                        args = [setupShPath, '--start'];
-                    }
+                    console.log("🚀 [WebServer] Starting automated reload (npm run dashboard)...");
 
                     const env = Object.assign({}, process.env, { SKIP_BROWSER: '1' });
-                    const subprocess = spawn(command, args, {
+                    const subprocess = spawn('npm', ['run', 'dashboard'], {
                         detached: true,
                         stdio: 'ignore',
                         env: env
