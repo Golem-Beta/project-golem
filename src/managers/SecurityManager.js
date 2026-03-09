@@ -11,12 +11,10 @@ class SecurityManager {
         const safeCmd = (cmd || "").trim();
         if (this.BLOCK_PATTERNS.some(regex => regex.test(safeCmd))) return { level: 'BLOCKED', reason: '毀滅性指令' };
 
-        // ✨ [v9.1] 增強檢查：若包含串聯、管線符號 (; | && ||)、重導向 (> <) 或子殼層執行 ($() ``) 則升級為 WARNING，避免惡意指令直通
-        if (/([;&|><`])|\$\(/.test(safeCmd)) {
-            return { level: 'WARNING', reason: '包含管線、重導向或子系統呼叫等複雜操作，需確認' };
+        // 依然阻擋重導向 (> <) 與子殼層 ($() ``) 因為過於複雜且具破壞性
+        if (/([><`])|\$\(/.test(safeCmd)) {
+            return { level: 'WARNING', reason: '包含重導向或子系統呼叫等複雜操作，需確認' };
         }
-
-        const baseCmd = safeCmd.split(/\s+/)[0];
 
         // ✨ [v9.1] 讀取使用者設定的白名單 (環境變數)
         const userWhitelist = (process.env.COMMAND_WHITELIST || "")
@@ -24,11 +22,37 @@ class SecurityManager {
             .map(cmd => cmd.trim())
             .filter(cmd => cmd.length > 0);
 
+        const dangerousOps = ['rm', 'mv', 'chmod', 'chown', 'sudo', 'su', 'reboot', 'shutdown', 'npm uninstall', 'Remove-Item', 'Stop-Computer'];
+
+        // 處理解析複合指令 (&&, ||, ;, |)
+        if (/([;&|])/.test(safeCmd)) {
+            // 用正規表達式將指令以 &&, ||, ;, | 切割
+            const subCmds = safeCmd.split(/[;&|]+/).map(c => c.trim()).filter(c => c.length > 0);
+
+            let allSafe = true;
+            for (const sub of subCmds) {
+                const subBaseCmd = sub.split(/\s+/)[0];
+
+                // 在毀滅清單/高危險操作
+                if (dangerousOps.includes(subBaseCmd)) return { level: 'DANGER', reason: '高風險操作' };
+
+                // 檢查是否所有小指令都在白名單中
+                if (!userWhitelist.includes(subBaseCmd)) {
+                    allSafe = false;
+                    break;
+                }
+            }
+
+            if (allSafe) return { level: 'SAFE' };
+            return { level: 'WARNING', reason: '複合指令中包含非信任授權的指令，需確認' };
+        }
+
+        const baseCmd = safeCmd.split(/\s+/)[0];
+
         // 原本的 SAFE_COMMANDS 不再預設放行，只看 userWhitelist
         if (userWhitelist.includes(baseCmd)) return { level: 'SAFE' };
 
         // 這些危險指令會直接進 DANGER
-        const dangerousOps = ['rm', 'mv', 'chmod', 'chown', 'sudo', 'su', 'reboot', 'shutdown', 'npm uninstall', 'Remove-Item', 'Stop-Computer'];
         if (dangerousOps.includes(baseCmd)) return { level: 'DANGER', reason: '高風險操作' };
 
         return { level: 'WARNING', reason: '需確認' };
