@@ -667,7 +667,7 @@ async function handleUnifiedCallback(ctx, actionData, forceTargetId = null) {
 
             let cmd = "";
 
-            if (approvedStep.action === 'command' || approvedStep.cmd || approvedStep.parameter) {
+            if (approvedStep.action === 'command' || approvedStep.cmd || approvedStep.parameter || approvedStep.command) {
                 cmd = approvedStep.cmd || approvedStep.parameter || approvedStep.command || "";
             }
             else if (approvedStep.action && approvedStep.action !== 'command') {
