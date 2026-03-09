@@ -80,6 +80,26 @@ class GolemBrain {
         // 2.5 初始化日誌管理員 (建立目錄)
         await this.chatLogManager.init();
 
+        // 2.6 同步技能索引到 SQLite (僅在完成建立/設定後才啟動)
+        try {
+            const personaManager = require('../skills/core/persona');
+            if (personaManager.exists(this.userDataDir)) {
+                const SkillIndexManager = require('../managers/SkillIndexManager');
+                const { resolveEnabledSkills } = require('../skills/skillsConfig');
+
+                // 獲取目前啟用的技能清單
+                const personaData = personaManager.get(this.userDataDir);
+                const personaSkills = personaData.skills || [];
+
+                const enabledSet = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', personaSkills);
+                await SkillIndexManager.sync(Array.from(enabledSet));
+            } else {
+                console.log(`⏸️ [Brain][${this.golemId}] 尚未完成設定 (Missing persona.json)，跳過技能索引同步。`);
+            }
+        } catch (e) {
+            console.warn('⚠️ [Brain] 技能索引同步失敗:', e.message);
+        }
+
         // 3. 初始化記憶引擎 (含降級策略)
         await this._initMemoryDriver();
 

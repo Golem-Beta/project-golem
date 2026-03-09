@@ -367,6 +367,14 @@ class WebServer {
                 const ProtocolFormatter = require('../src/services/ProtocolFormatter');
                 ProtocolFormatter._lastScanTime = 0;
 
+                // 4. Update SQLite Index
+                const SkillIndexManager = require('../src/managers/SkillIndexManager');
+                if (enabled) {
+                    SkillIndexManager.addSkill(id).catch(e => console.error(`[SkillIndex] Toggle-Add Error for ${id}:`, e.message));
+                } else {
+                    SkillIndexManager.removeSkill(id).catch(e => console.error(`[SkillIndex] Toggle-Remove Error for ${id}:`, e.message));
+                }
+
                 return res.json({ success: true, enabled, skillsStr: newSkillsStr });
             } catch (e) {
                 console.error("Failed to toggle skill:", e);
@@ -394,6 +402,15 @@ class WebServer {
 
                 fs.writeFileSync(filePath, content, 'utf8');
                 console.log(`✨ [WebServer] Custom skill created: ${safeId}.md`);
+
+                // 2. Index to SQLite if it would be enabled (mandatory or in OPTIONAL_SKILLS)
+                const { MANDATORY_SKILLS, resolveEnabledSkills } = require('../src/skills/skillsConfig');
+                const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', []);
+                if (MANDATORY_SKILLS.includes(safeId) || enabledSkills.has(safeId)) {
+                    const SkillIndexManager = require('../src/managers/SkillIndexManager');
+                    SkillIndexManager.addSkill(safeId).catch(e => console.error(`[SkillIndex] Create-Add Error for ${safeId}:`, e.message));
+                }
+
                 return res.json({ success: true, id: safeId });
             } catch (e) {
                 console.error('Failed to create skill:', e);
@@ -421,6 +438,15 @@ class WebServer {
 
                 fs.writeFileSync(filePath, content, 'utf8');
                 console.log(`📝 [WebServer] Custom skill updated: ${safeId}.md`);
+
+                // 2. Update SQLite Index if active
+                const { MANDATORY_SKILLS, resolveEnabledSkills } = require('../src/skills/skillsConfig');
+                const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', []);
+                if (MANDATORY_SKILLS.includes(safeId) || enabledSkills.has(safeId)) {
+                    const SkillIndexManager = require('../src/managers/SkillIndexManager');
+                    SkillIndexManager.addSkill(safeId).catch(e => console.error(`[SkillIndex] Update-Add Error for ${safeId}:`, e.message));
+                }
+
                 return res.json({ success: true, id: safeId });
             } catch (e) {
                 console.error('Failed to update skill:', e);

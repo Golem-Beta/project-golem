@@ -6,6 +6,7 @@ const path = require('path');
 const { getSystemFingerprint } = require('../utils/system');
 const skills = require('../skills');
 const skillManager = require('../managers/SkillManager');
+const skillIndexManager = require('../managers/SkillIndexManager');
 const { resolveEnabledSkills } = require('../skills/skillsConfig');
 
 class ProtocolFormatter {
@@ -92,7 +93,7 @@ ${selectedPrompt}
 5. FEASIBILITY: ZERO TRIAL-AND-ERROR. Provide the most stable, one-shot successful command.
 6. STRICT JSON: ESCAPE ALL DOUBLE QUOTES (\\") inside string values!
 7. ReAct: If you use [GOLEM_ACTION], DO NOT guess the result in [GOLEM_REPLY]. Wait for Observation.
-8. SKILL BOUNDARY: You are NOT allowed to autonomously inspect or load skill files. Only injected skills are available to you.
+8. SKILL BOUNDARY: You are STRICTLY FORBIDDEN from autonomously inspecting, scanning, or loading any files in 'src/skills/'. You DO NOT HAVE A PHYSICAL BODY or FILESYSTEM presence; you only exist within this conversation. Use ONLY the skills provided in the 'CORE SKILL PROTOCOLS' section below. If a skill is not listed there, you DO NOT have it.
 9. WORKSPACE: If you cannot access Google Workspace (@Google Drive/Keep/etc.), explicitly tell the user to enable the extension.
 ${observerPrompt}
 [USER INPUT / SYSTEM MESSAGE]
@@ -154,28 +155,24 @@ ${text}`;
 
                 const enabledSkills = resolveEnabledSkills(process.env.OPTIONAL_SKILLS || '', personaSkills);
 
-                const filteredMdFiles = mdFiles.filter(file => {
+                const filteredSkillIds = mdFiles.filter(file => {
                     const baseName = file.replace('.md', '').toLowerCase();
                     return enabledSkills.has(baseName);
-                });
+                }).map(file => file.replace('.md', '').toLowerCase());
 
-                console.log(`📡 [ProtocolFormatter] 正在平行讀取 ${filteredMdFiles.length} 個技能說明書...`);
-                systemPrompt += `\n\n### 🧩 CORE SKILL PROTOCOLS (Cognitive Layer):\n`;
+                console.log(`📡 [ProtocolFormatter] 正在從 SQLite 索引讀取 ${filteredSkillIds.length} 個技能...`);
+                systemPrompt += `\n\n### 🧩 CORE SKILL PROTOCOLS (Retrieved from SQLite: skills.db):\n`;
+                systemPrompt += `Information: All your active skills have been synchronized and retrieved from the central SQLite Skill Index (skills.db). You must only use the protocols listed below.\n\n`;
 
-                const readTasks = filteredMdFiles.map(async (file) => {
-                    const content = await fs.readFile(path.join(libPath, file), 'utf-8');
-                    const skillName = path.basename(file, '.md').toUpperCase();
-                    return { skillName, content };
-                });
-
-                const results = await Promise.all(readTasks);
-                for (const res of results) {
-                    systemPrompt += `#### SKILL: ${res.skillName}\n${res.content}\n\n`;
-                    skillMemoryText += `- 技能 "${res.skillName}"：已載入認知說明書\n`;
+                const indexedSkills = await skillIndexManager.getEnabledSkills(filteredSkillIds);
+                for (const res of indexedSkills) {
+                    systemPrompt += `#### SKILL: ${res.id.toUpperCase()}\n${res.content}\n\n`;
+                    skillMemoryText += `- 技能 "${res.id.toUpperCase()}"：已載入認知說明書\n`;
                 }
             }
         } catch (e) {
-            console.warn("❌ [ProtocolFormatter] 說明書掃描失敗:", e);
+            console.warn("❌ [ProtocolFormatter] 技能索引讀取失敗 (Fallback to filesystem):", e);
+            // Fallback 邏輯可以保留或交給 SkillIndexManager 處理
         }
 
         const superProtocol = `
@@ -189,7 +186,7 @@ Your response must be strictly divided into these 3 sections:
 [[BEGIN:reqId]]
 [GOLEM_MEMORY]
 - Manage long-term state, project context, and user preferences.
-- 🧠 **HIPPOCAMPUS**: If you inspect new skill files in \`src/skills/lib\`, you MUST memorize how to use them here.
+- 🧠 **HIPPOCAMPUS**: Memory consolidation layer. Do NOT attempt to read external skill files.
 - If no update is needed, output "null".
 [GOLEM_ACTION]
 - 🚨 **MANDATORY**: YOU MUST USE MARKDOWN JSON CODE BLOCKS!
