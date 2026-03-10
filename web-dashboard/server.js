@@ -286,6 +286,15 @@ class WebServer {
                     golemId
                 });
 
+                // ── [v9.1.10] 立即發送「思考中」信號 ──
+                this.broadcastLog({
+                    time: new Date().toLocaleTimeString(),
+                    msg: `[${golemId}] ...`,
+                    type: 'thinking',
+                    raw: '...',
+                    golemId
+                });
+
                 // 將訊息推進 Golem
                 global.handleDashboardMessage(mockContext, golemId).catch(exp => {
                     console.error('[WebServer] Direct chat error:', exp);
@@ -379,6 +388,15 @@ class WebServer {
                     msg: `[WebUser] ${translatedMsg}`,
                     type: displayType,
                     raw: `[User] ${translatedMsg}`,
+                    golemId
+                });
+
+                // ── [v9.1.10] 針對批准操作也發送「思考中」信號 (因為指令執行需要時間) ──
+                this.broadcastLog({
+                    time: new Date().toLocaleTimeString(),
+                    msg: `[${golemId}] ...`,
+                    type: 'thinking',
+                    raw: '...',
                     golemId
                 });
 
@@ -1647,8 +1665,8 @@ class WebServer {
                 console.log(`🧹 [WebServer] Cleared chat history for Golem [${gId}] due to browser session start.`);
             }
 
-            // Filter for chat-like UI messages
-            if (data.type === 'agent' || data.type === 'approval' || data.msg.includes('[MultiAgent]') || data.msg.includes('[User]') || data.msg.includes('[WebUser]')) {
+            // Filter for chat-like UI messages (Exclude 'thinking' type from history)
+            if (data.type !== 'thinking' && (data.type === 'agent' || data.type === 'approval' || data.msg.includes('[MultiAgent]') || data.msg.includes('[User]') || data.msg.includes('[WebUser]'))) {
                 let gId = data.golemId;
                 if (!gId) {
                     const srcMatch = data.msg.match(/^\[(.*?)\]/);

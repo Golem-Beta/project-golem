@@ -15,6 +15,7 @@ interface ChatMessage {
     isSystem: boolean;
     actionData?: any;
     isHistory?: boolean;
+    isThinking?: boolean;
 }
 
 export default function DirectChatPage() {
@@ -30,7 +31,9 @@ export default function DirectChatPage() {
         // For now let's just listen to live socket events.
 
         socket.on("log", (data: any) => {
-            if (data.type === 'agent' || data.type === 'approval' || data.msg.includes('[MultiAgent]') || data.msg.includes('[User]')) {
+            const isThinkingMessage = data.type === 'thinking';
+
+            if (isThinkingMessage || data.type === 'agent' || data.type === 'approval' || data.msg.includes('[MultiAgent]') || data.msg.includes('[User]')) {
                 let rawMsg = data.msg;
 
                 if (rawMsg.startsWith('[MultiAgent]')) {
@@ -48,17 +51,24 @@ export default function DirectChatPage() {
                     isSystem = !(sender === 'User' || sender === 'WebUser');
                 }
 
-                // If message is from another active Golem while we are talking to `activeGolem`, we still show it
-                // but we could filter it here. Actually, keeping it as a global 'terminal' style chat is fine.
+                setMessages((prev) => {
+                    // ── [v9.1.10] 思考中訊息管理 ──
+                    // 如果新的資料是正式回覆，則先移除該 Golem 舊有的「思考中」訊息
+                    let filtered = prev;
+                    if (!isThinkingMessage && (sender !== 'User' && sender !== 'WebUser')) {
+                        filtered = prev.filter(m => !(m.isThinking && m.sender === sender));
+                    }
 
-                setMessages((prev) => [...prev.slice(-1000), {
-                    id: Date.now().toString() + Math.random(),
-                    sender,
-                    content,
-                    timestamp: data.time || new Date().toLocaleTimeString(),
-                    isSystem,
-                    actionData: data.actionData
-                }]);
+                    return [...filtered.slice(-1000), {
+                        id: isThinkingMessage ? `thinking-${sender}-${Date.now()}` : (Date.now().toString() + Math.random()),
+                        sender,
+                        content,
+                        timestamp: data.time || new Date().toLocaleTimeString(),
+                        isSystem,
+                        actionData: data.actionData,
+                        isThinking: isThinkingMessage
+                    }];
+                });
             }
         });
 
@@ -207,7 +217,7 @@ export default function DirectChatPage() {
                                         msg.isSystem ? "mr-auto items-start text-left" : isUser ? "ml-auto items-end" : "mr-auto"
                                     )}
                                 >
-                                    {!msg.isSystem && (
+                                    {(msg.sender !== 'System' || msg.isThinking) && (
                                         <div className={cn("flex items-center space-x-2 mb-1", isUser && "flex-row-reverse space-x-reverse")}>
                                             <div className={cn(
                                                 "w-6 h-6 rounded-full flex items-center justify-center border flex-shrink-0",
@@ -222,16 +232,17 @@ export default function DirectChatPage() {
                                     <div
                                         className={cn(
                                             "p-3 rounded-lg text-sm whitespace-pre-wrap break-words inline-block",
-                                            msg.isSystem
-                                                ? "bg-gray-900 border-gray-800 rounded-tl-none text-gray-300"
-                                                : isUser
-                                                    ? "bg-blue-950/30 text-blue-100 border border-blue-900/50 rounded-tr-none"
-                                                    : "bg-cyan-950/30 text-cyan-100 border border-cyan-900/50 rounded-tl-none"
+                                            msg.isThinking ? "animate-pulse bg-gray-900/50 border-gray-800 text-gray-500 italic" :
+                                                msg.isSystem
+                                                    ? "bg-gray-900 border-gray-800 rounded-tl-none text-gray-300"
+                                                    : isUser
+                                                        ? "bg-blue-950/30 text-blue-100 border border-blue-900/50 rounded-tr-none"
+                                                        : "bg-cyan-950/30 text-cyan-100 border border-cyan-900/50 rounded-tl-none"
                                         )}
                                     >
-                                        {msg.isSystem && !msg.isHistory ?
+                                        {msg.isThinking ? "思考中..." : (msg.isSystem && !msg.isHistory ?
                                             <Typewriter content={msg.content.replace(/\n{2,}/g, '\n\n').trim()} onComplete={() => handleTypingComplete(msg.id)} />
-                                            : msg.content.replace(/\n{2,}/g, '\n\n').trim()}
+                                            : msg.content.replace(/\n{2,}/g, '\n\n').trim())}
                                     </div>
                                     {msg.actionData && Array.isArray(msg.actionData) && (!msg.isSystem || msg.isHistory || completedTypingMsgs.has(msg.id)) && (
                                         <div className="flex space-x-2 mt-2">
