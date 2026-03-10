@@ -72,6 +72,7 @@ class WebServer {
 
         this.init();
         this.logBuffer = []; // Store last 200 logs
+        this.chatHistory = new Map(); // Store chat history per golem
     }
 
     /**
@@ -155,7 +156,14 @@ class WebServer {
     init() {
         // Serve static files with .html extension support
         const publicPath = path.join(__dirname, 'out');
-        this.app.use(express.static(publicPath, { extensions: ['html'] }));
+        this.app.use(express.static(publicPath, {
+            extensions: ['html'],
+            setHeaders: (res, path) => {
+                res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+                res.setHeader('Pragma', 'no-cache');
+                res.setHeader('Expires', '0');
+            }
+        }));
 
         // Fix Next.js static export routing
         this.app.get('/', (req, res) => {
@@ -224,6 +232,199 @@ class WebServer {
 
 
         // --- API Routes ---
+
+        // Chat API (Direct Web Chat)
+        this.app.post('/api/chat', async (req, res) => {
+            try {
+                const { golemId, message } = req.body;
+                if (!golemId || !message) {
+                    return res.status(400).json({ error: 'Missing golemId or message' });
+                }
+
+                if (typeof global.handleDashboardMessage !== 'function') {
+                    return res.status(503).json({ error: 'Dashboard message handler not ready' });
+                }
+
+                // 建立 UniversalContext 替代品
+                const mockContext = {
+                    platform: 'web',
+                    isAdmin: true,
+                    text: message,
+                    messageTime: Date.now(),
+                    senderName: 'User',
+                    replyToName: '',
+                    chatId: 'web-dashboard',
+                    reply: async (text, options) => {
+                        let payloadType = 'agent';
+                        let actionData = null;
+
+                        if (options && options.reply_markup && options.reply_markup.inline_keyboard) {
+                            payloadType = 'approval';
+                            actionData = options.reply_markup.inline_keyboard[0];
+                        }
+
+                        this.broadcastLog({
+                            time: new Date().toLocaleTimeString(),
+                            msg: `[${golemId}] ${text}`,
+                            type: payloadType,
+                            raw: text,
+                            actionData,
+                            golemId
+                        });
+                    },
+                    sendTyping: async () => { },
+                    getAttachment: async () => null,
+                    instance: { username: golemId }
+                };
+
+                // 回顯使用者的訊息到 Dashboard Log
+                this.broadcastLog({
+                    time: new Date().toLocaleTimeString(),
+                    msg: `[User] ${message}`,
+                    type: 'agent',
+                    raw: `[User] ${message}`,
+                    golemId
+                });
+
+                // ── [v9.1.10] 立即發送「思考中」信號 ──
+                this.broadcastLog({
+                    time: new Date().toLocaleTimeString(),
+                    msg: `[${golemId}] ...`,
+                    type: 'thinking',
+                    raw: '...',
+                    golemId
+                });
+
+                // 將訊息推進 Golem
+                global.handleDashboardMessage(mockContext, golemId).catch(exp => {
+                    console.error('[WebServer] Direct chat error:', exp);
+                });
+
+                return res.json({ success: true });
+            } catch (e) {
+                console.error('Failed to send chat message:', e);
+                return res.status(500).json({ error: e.message });
+            }
+        });
+
+        // Chat Action Callback API (Inline Button Click)
+        this.app.post('/api/chat/callback', async (req, res) => {
+            try {
+                const { golemId, callback_data } = req.body;
+                if (!golemId || !callback_data) {
+                    return res.status(400).json({ error: 'Missing golemId or callback_data' });
+                }
+
+                const index = require('../index.js');
+
+                if (typeof global.handleDashboardMessage !== 'function') {
+                    return res.status(503).json({ error: 'Dashboard message handler not ready' });
+                }
+
+                const mockContext = {
+                    platform: 'web',
+                    isAdmin: true,
+                    data: callback_data,
+                    messageTime: Date.now(),
+                    senderName: 'User',
+                    replyToName: '',
+                    chatId: 'web-dashboard',
+                    reply: async (text) => {
+                        this.broadcastLog({
+                            time: new Date().toLocaleTimeString(),
+                            msg: `[${golemId}] ${text}`,
+                            type: 'agent',
+                            raw: text
+                        });
+                    },
+                    answerCallbackQuery: async () => { },
+                    sendTyping: async () => { },
+                    instance: { username: golemId }
+                };
+
+                // ── [v9.1.8] 翻譯指令代碼為人類語言 ──
+                let translatedMsg = callback_data;
+                let displayType = 'agent';
+
+                if (callback_data.includes('_')) {
+                    const [action, taskId] = callback_data.split('_');
+                    const isApprove = action === 'APPROVE';
+                    const isDeny = action === 'DENY';
+
+                    if (isApprove || isDeny) {
+                        translatedMsg = isApprove ? '✅ 批准執行' : '❌ 拒絕執行';
+                        displayType = 'agent'; // 雖然是 User 發起，但目前前端統一走 agent 頻道
+
+                        // 嘗試抓取具體指令內容增加上下文
+                        try {
+                            const instance = index.getOrCreateGolem ? index.getOrCreateGolem(golemId) : null;
+                            if (instance && instance.controller && instance.controller.pendingTasks) {
+                                const task = instance.controller.pendingTasks.get(taskId);
+                                if (task && task.steps && task.steps[task.nextIndex]) {
+                                    const step = task.steps[task.nextIndex];
+                                    const cmd = step.cmd || step.parameter || step.command || "";
+                                    if (cmd) {
+                                        translatedMsg += `: \`${cmd.length > 50 ? cmd.substring(0, 47) + '...' : cmd}\``;
+                                    }
+                                }
+                            }
+                        } catch (err) {
+                            console.warn('[WebServer] 無法取得任務上下文:', err.message);
+                        }
+                    }
+                }
+
+                // ── [v9.1.11] 調整順序：優先顯示使用者動作，再執行後端邏輯 ──
+
+                // 1. 回顯操作給前端 (改用 [WebUser] 前綴，讓前端正確歸類為使用者消息)
+                this.broadcastLog({
+                    time: new Date().toLocaleTimeString(),
+                    msg: `[WebUser] ${translatedMsg}`,
+                    type: displayType,
+                    raw: `[User] ${translatedMsg}`,
+                    golemId
+                });
+
+                // 2. 立即發送「思考中」信號
+                this.broadcastLog({
+                    time: new Date().toLocaleTimeString(),
+                    msg: `[${golemId}] ...`,
+                    type: 'thinking',
+                    raw: '...',
+                    golemId
+                });
+
+                // 3. 微小延遲確保前端 Socket 順序，接著才觸發後端執行 (避免 Golem 回覆超車)
+                setTimeout(() => {
+                    if (typeof index.handleUnifiedCallback === 'function') {
+                        index.handleUnifiedCallback(mockContext, callback_data, golemId).catch(console.error);
+                    } else if (global.handleUnifiedCallback) {
+                        global.handleUnifiedCallback(mockContext, callback_data, golemId).catch(console.error);
+                    } else {
+                        console.error('[WebServer] handleUnifiedCallback not found in index.js exports or global');
+                    }
+                }, 100);
+
+                return res.json({ success: true });
+            } catch (e) {
+                console.error('Failed to send callback query:', e);
+                return res.status(500).json({ error: e.message });
+            }
+        });
+
+        // Chat History API
+        this.app.get('/api/chat/history', (req, res) => {
+            try {
+                const { golemId } = req.query;
+                if (!golemId) return res.status(400).json({ error: 'golemId required' });
+
+                const history = this.chatHistory ? (this.chatHistory.get(golemId) || []) : [];
+                return res.json({ success: true, history });
+            } catch (e) {
+                console.error('Failed to fetch chat history:', e);
+                return res.status(500).json({ error: e.message });
+            }
+        });
 
         // Config API (Settings Page)
         this.app.get('/api/config', (req, res) => {
@@ -1456,6 +1657,40 @@ class WebServer {
         this.logBuffer.push(data);
         if (this.logBuffer.length > 200) {
             this.logBuffer.shift();
+        }
+
+        // ── [v9.1.9] Chat History Tracking ──
+        if (data && data.msg) {
+            // Detect Browser Session Restart to clear history
+            const restartMatch = data.msg.match(/Browser Session Started \(Golem: (.*?)\)/);
+            if (restartMatch) {
+                const gId = restartMatch[1];
+                if (!this.chatHistory) this.chatHistory = new Map();
+                this.chatHistory.set(gId, []);
+                console.log(`🧹 [WebServer] Cleared chat history for Golem [${gId}] due to browser session start.`);
+            }
+
+            // Filter for chat-like UI messages (Exclude 'thinking' type from history)
+            if (data.type !== 'thinking' && (data.type === 'agent' || data.type === 'approval' || data.msg.includes('[MultiAgent]') || data.msg.includes('[User]') || data.msg.includes('[WebUser]'))) {
+                let gId = data.golemId;
+                if (!gId) {
+                    const srcMatch = data.msg.match(/^\[(.*?)\]/);
+                    if (srcMatch && !['User', 'System', 'WebUser', 'User Action', 'MultiAgent'].includes(srcMatch[1])) {
+                        gId = srcMatch[1];
+                    }
+                }
+
+                if (gId && gId !== 'System' && gId !== 'global') {
+                    if (!this.chatHistory) this.chatHistory = new Map();
+                    if (!this.chatHistory.has(gId)) this.chatHistory.set(gId, []);
+                    this.chatHistory.get(gId).push(data);
+
+                    // Limit history to last 500 messages per Golem
+                    if (this.chatHistory.get(gId).length > 500) {
+                        this.chatHistory.get(gId).shift();
+                    }
+                }
+            }
         }
 
         if (this.io) {
