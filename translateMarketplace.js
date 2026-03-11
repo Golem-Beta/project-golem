@@ -2,10 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 
-const REPO_URL = 'https://raw.githubusercontent.com/VoltAgent/awesome-openclaw-skills/main/';
-const DATA_DIR = path.join(__dirname, '..', '..', 'data', 'marketplace');
+const DATA_DIR = path.join(__dirname, 'data', 'marketplace');
 
-// Define bilingual categories
+// Update to bilingual mapping if not present
 const CATEGORY_MAP = {
     'ai-and-llms': { en: 'AI & LLMs', zh: '人工智慧與語言模型' },
     'apple-apps-and-services': { en: 'Apple Apps & Services', zh: 'Apple 應用與服務' },
@@ -40,8 +39,6 @@ const CATEGORY_MAP = {
     'web-and-frontend-development': { en: 'Web & Frontend Development', zh: '網頁與前端開發' }
 };
 
-const CATEGORIES = Object.keys(CATEGORY_MAP);
-
 async function fetchFile(url) {
     return new Promise((resolve, reject) => {
         https.get(url, (res) => {
@@ -57,8 +54,9 @@ async function fetchFile(url) {
 
 async function translateToZhTW(text) {
     if (!text || text.trim() === '') return text;
+    const cleanText = text.replace(/[*_~`]/g, '');
     try {
-        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-tw&dt=t&q=${encodeURIComponent(text)}`;
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=zh-tw&dt=t&q=${encodeURIComponent(cleanText)}`;
         const content = await fetchFile(url);
         const parsed = JSON.parse(content);
         if (parsed && parsed[0]) {
@@ -71,81 +69,64 @@ async function translateToZhTW(text) {
     }
 }
 
-async function run() {
-    console.log('Fetching & Translating OpenClaw Skills (Bilingual Mode)...');
-    if (!fs.existsSync(DATA_DIR)) {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
+async function translateFile(filePath) {
+    console.log(`Processing ${path.basename(filePath)}...`);
+    const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    let changed = false;
+    let count = 0;
 
-    let globalTotal = 0;
-    let translatedCount = 0;
+    for (let i = 0; i < data.length; i++) {
+        const skill = data[i];
 
-    for (const catKey of CATEGORIES) {
-        try {
-            const url = `${REPO_URL}categories/${catKey}.md`;
-            console.log(`\nFetching ${catKey}...`);
-            const content = await fetchFile(url);
+        // Ensure bilingual category names exist
+        if (!skill.category_name) {
+            skill.category_name = CATEGORY_MAP[skill.category] || { en: skill.category, zh: skill.category };
+            changed = true;
+        }
 
-            const outFile = path.join(DATA_DIR, `${catKey}.json`);
-            let existingMap = {};
-            if (fs.existsSync(outFile)) {
-                try {
-                    const oldData = JSON.parse(fs.readFileSync(outFile, 'utf8'));
-                    oldData.forEach(s => {
-                        existingMap[s.id] = s;
-                    });
-                } catch (e) { }
+        // Fix description mapping: description should be English, description_zh should be Chinese
+        const original = skill.original_description || skill.description;
+
+        // If description is currently not English (matches original_description but translated), restore it
+        if (skill.description !== original && original) {
+            skill.description = original;
+            changed = true;
+        }
+
+        if (!skill.description_zh || skill.description_zh.trim() === '') {
+            console.log(`  [${i + 1}/${data.length}] Translating: ${skill.title}...`);
+            const translated = await translateToZhTW(original);
+            if (translated !== original) {
+                skill.description_zh = translated;
+                changed = true;
+                count++;
             }
-
-            const parsedSkills = [];
-            const lines = content.split('\n');
-            let catCount = 0;
-
-            for (const line of lines) {
-                const match = line.match(/^- \[([^\]]+)\]\(([^)]+)\) - (.*)$/);
-                if (match) {
-                    const rawTitle = match[1];
-                    const rawId = rawTitle.toLowerCase().replace(/[^a-z0-9_-]/g, '');
-                    const rawRepoUrl = match[2];
-                    const rawDesc = match[3];
-
-                    let descZh = "";
-
-                    // Incremental Cache Check
-                    if (existingMap[rawId] && (existingMap[rawId].original_description === rawDesc || existingMap[rawId].description === rawDesc) && existingMap[rawId].description_zh) {
-                        descZh = existingMap[rawId].description_zh;
-                    } else {
-                        // Needs translation
-                        descZh = await translateToZhTW(rawDesc);
-                        translatedCount++;
-                        // Small throttle
-                        await new Promise(r => setTimeout(r, 100));
-                    }
-
-                    parsedSkills.push({
-                        title: rawTitle,
-                        id: rawId,
-                        repoUrl: rawRepoUrl,
-                        description: rawDesc, // Keep original English
-                        original_description: rawDesc,
-                        description_zh: descZh, // Chinese translation
-                        category: catKey,
-                        category_name: CATEGORY_MAP[catKey] // Bilingual category names
-                    });
-                    catCount++;
-                }
-            }
-
-            fs.writeFileSync(outFile, JSON.stringify(parsedSkills, null, 2));
-            console.log(`➡️  Saved ${catCount} skills to ${catKey}.json`);
-            globalTotal += catCount;
-
-        } catch (e) {
-            console.error(`Error processing category ${catKey}:`, e.message);
+            await new Promise(r => setTimeout(r, 150));
         }
     }
 
-    console.log(`\n✅ Finished! Read ${globalTotal} total skills. Made ${translatedCount} new translation requests.`);
+    if (changed) {
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+        console.log(`✅ Updated ${count} translations and structure in ${path.basename(filePath)}`);
+    } else {
+        console.log(`ℹ️ No changes needed for ${path.basename(filePath)}`);
+    }
+}
+
+async function run() {
+    if (!fs.existsSync(DATA_DIR)) {
+        console.error("Marketplace directory not found!");
+        return;
+    }
+
+    const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.json'));
+    console.log(`Found ${files.length} categories to process.`);
+
+    for (const file of files) {
+        await translateFile(path.join(DATA_DIR, file));
+    }
+
+    console.log("\n🎊 All translation tasks completed.");
 }
 
 run();

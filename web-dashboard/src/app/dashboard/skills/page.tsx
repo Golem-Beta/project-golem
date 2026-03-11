@@ -199,38 +199,38 @@ function SkillEditorDialog({
 }
 
 const MARKET_CATEGORIES = [
-    { id: 'all', name: '全部類別' },
-    { id: 'ai-and-llms', name: 'AI & LLMs' },
-    { id: 'apple-apps-and-services', name: 'Apple Apps' },
-    { id: 'browser-and-automation', name: 'Browser Automation' },
-    { id: 'calendar-and-scheduling', name: 'Calendar' },
-    { id: 'clawdbot-tools', name: 'Clawdbot Tools' },
-    { id: 'cli-utilities', name: 'CLI Utilities' },
-    { id: 'coding-agents-and-ides', name: 'Coding Agents' },
-    { id: 'communication', name: 'Communication' },
-    { id: 'data-and-analytics', name: 'Data Analytics' },
-    { id: 'devops-and-cloud', name: 'DevOps & Cloud' },
-    { id: 'finance', name: 'Finance' },
-    { id: 'gaming', name: 'Gaming' },
-    { id: 'git-and-github', name: 'Git & GitHub' },
-    { id: 'health-and-fitness', name: 'Health & Fitness' },
-    { id: 'image-and-video-generation', name: 'Image & Video' },
-    { id: 'ios-and-macos-development', name: 'iOS/macOS Dev' },
-    { id: 'marketing-and-sales', name: 'Marketing & Sales' },
-    { id: 'media-and-streaming', name: 'Media' },
-    { id: 'moltbook', name: 'Moltbook' },
-    { id: 'notes-and-pkm', name: 'Notes & PKM' },
-    { id: 'pdf-and-documents', name: 'PDF & Docs' },
-    { id: 'personal-development', name: 'Personal Dev' },
-    { id: 'productivity-and-tasks', name: 'Productivity' },
-    { id: 'search-and-research', name: 'Search & Research' },
-    { id: 'security-and-passwords', name: 'Security' },
-    { id: 'self-hosted-and-automation', name: 'Self-Hosted' },
-    { id: 'shopping-and-e-commerce', name: 'E-commerce' },
-    { id: 'smart-home-and-iot', name: 'Smart Home & IoT' },
-    { id: 'speech-and-transcription', name: 'Speech' },
-    { id: 'transportation', name: 'Transportation' },
-    { id: 'web-and-frontend-development', name: 'Web Dev' }
+    { id: 'all', name: '全部類別', name_en: 'All Categories' },
+    { id: 'ai-and-llms', name: '人工智慧與模型', name_en: 'AI & LLMs' },
+    { id: 'apple-apps-and-services', name: 'Apple 應用與服務', name_en: 'Apple Apps' },
+    { id: 'browser-and-automation', name: '瀏覽器與自動化', name_en: 'Browser Automation' },
+    { id: 'calendar-and-scheduling', name: '行事曆與排程', name_en: 'Calendar' },
+    { id: 'clawdbot-tools', name: 'Clawdbot 工具', name_en: 'Clawdbot Tools' },
+    { id: 'cli-utilities', name: '命令列工具', name_en: 'CLI Utilities' },
+    { id: 'coding-agents-and-ides', name: '程式碼代理與 IDE', name_en: 'Coding Agents' },
+    { id: 'communication', name: '通訊聯絡', name_en: 'Communication' },
+    { id: 'data-and-analytics', name: '數據與分析', name_en: 'Data Analytics' },
+    { id: 'devops-and-cloud', name: 'DevOps 與雲端', name_en: 'DevOps & Cloud' },
+    { id: 'finance', name: '金融理財', name_en: 'Finance' },
+    { id: 'gaming', name: '遊戲娛樂', name_en: 'Gaming' },
+    { id: 'git-and-github', name: 'Git & GitHub', name_en: 'Git & GitHub' },
+    { id: 'health-and-fitness', name: '健康與健身', name_en: 'Health & Fitness' },
+    { id: 'image-and-video-generation', name: '圖像與影片生成', name_en: 'Image & Video' },
+    { id: 'ios-and-macos-development', name: 'iOS/macOS 開發', name_en: 'iOS/macOS Dev' },
+    { id: 'marketing-and-sales', name: '行銷與銷售', name_en: 'Marketing & Sales' },
+    { id: 'media-and-streaming', name: '媒體與串流', name_en: 'Media' },
+    { id: 'moltbook', name: 'Moltbook', name_en: 'Moltbook' },
+    { id: 'notes-and-pkm', name: '筆記與知識管理', name_en: 'Notes & PKM' },
+    { id: 'pdf-and-documents', name: 'PDF 與文件', name_en: 'PDF & Docs' },
+    { id: 'personal-development', name: '個人成長', name_en: 'Personal Dev' },
+    { id: 'productivity-and-tasks', name: '生產力與任務', name_en: 'Productivity' },
+    { id: 'search-and-research', name: '搜索與研究', name_en: 'Search & Research' },
+    { id: 'security-and-passwords', name: '安全與密碼', name_en: 'Security' },
+    { id: 'self-hosted-and-automation', name: '自託管與自動化', name_en: 'Self-Hosted' },
+    { id: 'shopping-and-e-commerce', name: '購物與電商', name_en: 'E-commerce' },
+    { id: 'smart-home-and-iot', name: '智慧家庭與物聯網', name_en: 'Smart Home' },
+    { id: 'speech-and-transcription', name: '語音與逐字稿', name_en: 'Speech' },
+    { id: 'transportation', name: '交通運輸', name_en: 'Transportation' },
+    { id: 'web-and-frontend-development', name: '網頁與前端開發', name_en: 'Web Dev' }
 ];
 
 // ── Main Page ───────────────────────────────────────────────────────────────
@@ -593,7 +593,7 @@ export default function SkillsPage() {
                                                     <h2 className="text-2xl font-bold text-white mb-2">{selectedMarketSkill.title}</h2>
                                                     <div className="flex gap-2">
                                                         <span className="flex items-center gap-1 text-xs px-2.5 py-1 bg-gray-800 text-gray-300 rounded-md border border-gray-700">
-                                                            <Tags className="w-3 h-3 text-cyan-400" /> {selectedMarketSkill.category}
+                                                            <Tags className="w-3 h-3 text-cyan-400" /> {selectedMarketSkill.category_name?.zh || selectedMarketSkill.category}
                                                         </span>
                                                         <a href={selectedMarketSkill.repoUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs px-2.5 py-1 bg-gray-800 text-gray-300 rounded-md border border-gray-700 hover:text-white hover:border-gray-500 transition-colors">
                                                             View on GitHub
@@ -603,7 +603,12 @@ export default function SkillsPage() {
                                             </div>
                                             <div className="prose prose-invert prose-cyan max-w-none text-gray-300/90 text-[15px] leading-relaxed">
                                                 <h3>Description</h3>
-                                                <p>{selectedMarketSkill.description_zh || selectedMarketSkill.description}</p>
+                                                {selectedMarketSkill.description_zh && (
+                                                    <p className="font-medium text-cyan-50 mb-2">{selectedMarketSkill.description_zh}</p>
+                                                )}
+                                                <p className={selectedMarketSkill.description_zh ? "text-gray-400 text-sm italic" : ""}>
+                                                    {selectedMarketSkill.description}
+                                                </p>
                                                 <div className="p-4 mt-6 bg-gray-900 border border-gray-800 rounded-xl relative overflow-hidden">
                                                     <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-700/10 rounded-bl-full pointer-events-none"></div>
                                                     <h4 className="flex items-center gap-2 text-cyan-400 text-sm font-bold uppercase tracking-wide mt-0 mb-3"><Zap className="w-4 h-4" />如何安裝</h4>
@@ -707,7 +712,9 @@ export default function SkillsPage() {
                                                 className="w-full appearance-none bg-gray-950/60 border border-gray-800 rounded-lg pl-3 pr-8 py-2 text-sm text-gray-200 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all cursor-pointer"
                                             >
                                                 {MARKET_CATEGORIES.map(cat => (
-                                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                                    <option key={cat.id} value={cat.id}>
+                                                        {cat.name} {cat.name_en ? `(${cat.name_en})` : ''}
+                                                    </option>
                                                 ))}
                                             </select>
                                             <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
