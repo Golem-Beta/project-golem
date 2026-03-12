@@ -1298,8 +1298,8 @@ class WebServer {
                     dcToken, dcAuthMode, dcAdminId, dcChatId
                 } = req.body;
 
-                if (!id || (!tgToken && !dcToken)) {
-                    return res.status(400).json({ error: 'Missing required fields: id, and at least one Bot Token (Telegram or Discord)' });
+                if (!id) {
+                    return res.status(400).json({ error: 'Missing required fields: id' });
                 }
 
                 // Validate ID format

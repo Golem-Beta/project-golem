@@ -215,8 +215,9 @@ function InstallSuccessDialog({
                     <DialogTitle className="text-white text-lg mt-2 font-bold">技能已安裝成功</DialogTitle>
                     <DialogDescription className="text-gray-400 text-sm text-center leading-relaxed mt-2" asChild>
                         <div>
-                            新技能已經加入「已載入模組」囉！<br />
-                            請記得點擊畫面右上角的 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mx-1 font-medium"><Zap className="w-3 h-3" />注入技能書</span> 以套用新技能。
+                            新技能已經加入「已載入模組」標籤中囉！<br />
+                            請記得切換至 <strong>「已載入模組」</strong> 並將其 <strong>手動啟用</strong>，<br />
+                            最後再點擊右上角的 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 mx-1 font-medium"><Zap className="w-3 h-3" />注入技能書</span> 即可。
                         </div>
                     </DialogDescription>
                 </DialogHeader>

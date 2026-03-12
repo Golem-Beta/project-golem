@@ -26,7 +26,7 @@ export default function CreateGolemPage() {
     }, [isSingleNode]);
 
     // Step 2: Platforms
-    const [platforms, setPlatforms] = useState({ telegram: false, discord: false });
+    const [platforms, setPlatforms] = useState({ telegram: false, discord: false, direct: false });
 
     // Step 3: Configs
     const [isLoading, setIsLoading] = useState(false);
@@ -71,8 +71,13 @@ export default function CreateGolemPage() {
             if (!id.trim()) return setError("請填寫 Golem ID");
             setStep(2);
         } else if (step === 2) {
-            if (!platforms.telegram && !platforms.discord) return setError("請至少選擇一種通訊方式");
-            setStep(3);
+            if (!platforms.telegram && !platforms.discord && !platforms.direct) return setError("請至少選擇一種通訊方式");
+            if (platforms.direct) {
+                // 如果是直接交談，直接送出
+                handleSubmit(null as any);
+            } else {
+                setStep(3);
+            }
         }
     };
 
@@ -81,12 +86,16 @@ export default function CreateGolemPage() {
         setStep(step - 1);
     };
 
-    const selectPlatform = (platform: 'telegram' | 'discord') => {
-        setPlatforms({ telegram: platform === 'telegram', discord: platform === 'discord' });
+    const selectPlatform = (platform: 'telegram' | 'discord' | 'direct') => {
+        setPlatforms({
+            telegram: platform === 'telegram',
+            discord: platform === 'discord',
+            direct: platform === 'direct'
+        });
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+        if (e) e.preventDefault();
         setError(null);
 
         if (platforms.telegram) {
@@ -254,6 +263,21 @@ export default function CreateGolemPage() {
                                         <p className="text-sm text-gray-500">在 Discord 伺服器或私訊中部署您的 Golem</p>
                                     </div>
                                     {platforms.discord && <div className="absolute right-5 text-violet-400"><CheckCircle2 className="w-6 h-6" /></div>}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => selectPlatform('direct')}
+                                    className={`relative flex items-center p-5 rounded-xl border-2 transition-all ${platforms.direct ? 'bg-emerald-950/40 border-emerald-500' : 'bg-gray-950 border-gray-800 hover:border-gray-700'}`}
+                                >
+                                    <div className={`p-3 rounded-lg mr-4 ${platforms.direct ? 'bg-emerald-500/20 text-emerald-400' : 'bg-gray-800 text-gray-400'}`}>
+                                        <MessageSquare className="w-6 h-6" />
+                                    </div>
+                                    <div className="text-left flex-1">
+                                        <h3 className={`font-bold text-lg ${platforms.direct ? 'text-white' : 'text-gray-300'}`}>直接交談 (Dashboard)</h3>
+                                        <p className="text-sm text-gray-500">直接在網頁儀表板與您的 Golem 進行互動，無需第三方平台</p>
+                                    </div>
+                                    {platforms.direct && <div className="absolute right-5 text-emerald-400"><CheckCircle2 className="w-6 h-6" /></div>}
                                 </button>
                             </div>
                         </div>
