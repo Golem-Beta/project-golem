@@ -1277,11 +1277,20 @@ class WebServer {
 
         this.app.post('/api/system/restart', (req, res) => {
             try {
-                console.log("🔄 [System] Restart requested by user. Terminating process...");
-                res.json({ success: true, message: "Restarting system..." });
-                setTimeout(() => {
-                    process.exit(0);
-                }, 1000);
+                console.log("🔄 [System] Restart requested by user. Triggering hard restart...");
+                res.json({ success: true, message: "Restarting system... Full re-initialization in progress." });
+                
+                if (typeof global.gracefulRestart === 'function') {
+                    setTimeout(() => {
+                        global.gracefulRestart().catch(err => {
+                            console.error("❌ [System] Restart error:", err);
+                            process.exit(1);
+                        });
+                    }, 1000);
+                } else {
+                    console.warn("⚠️ [System] global.gracefulRestart not found, falling back to process.exit()");
+                    setTimeout(() => process.exit(0), 1000);
+                }
             } catch (e) {
                 return res.status(500).json({ error: e.message });
             }
@@ -1739,12 +1748,19 @@ class WebServer {
 
         this.app.post('/api/system/reload', (req, res) => {
             console.log("🔄 [WebServer] Received reload request. Restarting system...");
-            res.json({ success: true, message: "System is restarting..." });
+            res.json({ success: true, message: "System is restarting with full re-initialization..." });
 
-            // Inform the user that a manual restart is required
-            setTimeout(() => {
-                console.log("📢 [WebServer] Update applied. Manual restart requested via UI.");
-            }, 500);
+            if (typeof global.gracefulRestart === 'function') {
+                setTimeout(() => {
+                    global.gracefulRestart().catch(err => {
+                        console.error("❌ [System] Reload error:", err);
+                        process.exit(1);
+                    });
+                }, 1000);
+            } else {
+                console.warn("⚠️ [System] global.gracefulRestart not found, falling back to process.exit()");
+                setTimeout(() => process.exit(0), 1000);
+            }
         });
 
         this.app.post('/api/system/shutdown', (req, res) => {
