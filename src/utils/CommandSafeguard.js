@@ -14,9 +14,11 @@ class CommandSafeguard {
             /^cat\s+.*$/
         ];
 
-        // 敏感關鍵字黑名單 (即便符合白名單格式也會攔截)
-        this.blacklistedKeywords = [
-            ';', '&&', '||', '>', '`', '$(', '|',
+        // 結構性敏感符號 (在未核准前攔截)
+        this.sensitiveSymbols = [';', '&&', '||', '>', '`', '$(', '|'];
+
+        // 絕對禁止的破壞性操作 (即便核准也高機率攔截)
+        this.dangerousOps = [
             'rm -rf', 'sudo', 'chmod', 'chown',
             '/etc/passwd', '/etc/shadow', '.env'
         ];
@@ -25,32 +27,56 @@ class CommandSafeguard {
     /**
      * 驗證指令是否安全
      * @param {string} cmd 原始指令字串
+     * @param {boolean} skipWhitelist 是否跳過嚴格正則白名單 (用於手動核准後)
      * @returns {Object} { safe: boolean, reason?: string, sanitizedCmd?: string }
      */
-    validate(cmd) {
+    validate(cmd, skipWhitelist = false) {
         if (!cmd || typeof cmd !== 'string') {
             return { safe: false, reason: '指令格式無效' };
         }
 
         const trimmedCmd = cmd.trim();
 
-        // 1. 檢查黑名單關鍵字 (基本防禦)
-        // 排除掉 legitimate 的引號內字串，這裡簡易處理
-        for (const keyword of this.blacklistedKeywords) {
-            if (trimmedCmd.includes(keyword)) {
-                // 如果是 node skills.js "xxx" 格式，允許引號內出現某些字元，但這裡先採保守策略
-                return { safe: false, reason: `偵測到敏感關鍵字: ${keyword}` };
+        // 1. 檢查絕對禁止的破壞性操作
+        for (const op of this.dangerousOps) {
+            if (trimmedCmd.includes(op)) {
+                return { safe: false, reason: `偵測到高度危險操作: ${op}` };
             }
         }
 
-        // 2. 檢查白名單模式
-        const isMatched = this.whitelist.some(regex => regex.test(trimmedCmd));
-
-        if (!isMatched) {
-            return { safe: false, reason: '指令未列於白名單中' };
+        // 2. 檢查結構性符號
+        if (!skipWhitelist) {
+            for (const symbol of this.sensitiveSymbols) {
+                if (trimmedCmd.includes(symbol)) {
+                    return { safe: false, reason: `偵測到敏感關鍵字: ${symbol}` };
+                }
+            }
         }
 
-        return { safe: true, sanitizedCmd: trimmedCmd };
+        // 如果是核准過的，且沒觸發破壞性操作，則放行
+        if (skipWhitelist) {
+            return { safe: true, sanitizedCmd: trimmedCmd };
+        }
+
+        // 3. 檢查白名單模式
+        const isMatched = this.whitelist.some(regex => regex.test(trimmedCmd));
+
+        if (isMatched) {
+            return { safe: true, sanitizedCmd: trimmedCmd };
+        }
+
+        // 4. ✨ [v9.1] 整合自適應白名單 (與 SecurityManager 同步)
+        const userWhitelist = (process.env.COMMAND_WHITELIST || "")
+            .split(',')
+            .map(c => c.trim())
+            .filter(c => c.length > 0);
+
+        const baseCmd = trimmedCmd.split(/\s+/)[0];
+        if (userWhitelist.includes(baseCmd)) {
+            return { safe: true, sanitizedCmd: trimmedCmd };
+        }
+
+        return { safe: false, reason: '指令未列於白名單中' };
     }
 }
 

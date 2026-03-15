@@ -667,7 +667,9 @@ async function handleUnifiedCallback(ctx, actionData) {
 
             // 🛡️ [Security Safeguard] 指令安全檢查
             const safeguard = require('./src/utils/CommandSafeguard');
-            const validation = safeguard.validate(cmd);
+            // 已由使用者手動核准，故跳過硬編碼的正則白名單檢查 (skipWhitelist = true)
+            // 僅保留黑名單關鍵字與格式校準
+            const validation = safeguard.validate(cmd, true);
             if (!validation.safe) {
                 console.error(`🛡️ [Safeguard] 攔截危險指令: ${cmd} | 原因: ${validation.reason}`);
                 await ctx.reply(`🛡️ **安全警告**：偵測到潛在危險指令！\n執行權限已自動攔截。\n原因：${validation.reason}`);
