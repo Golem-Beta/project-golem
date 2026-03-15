@@ -30,6 +30,12 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Reason:', reason);
 });
 
+const ConfigManager = require('./src/config');
+const SystemLogger = require('./src/utils/SystemLogger');
+
+// 🚀 初始化系統日誌持久化 (必須在 Dashboard 之前，確保攔截順序正確)
+SystemLogger.init(ConfigManager.LOG_BASE_DIR);
+
 // Dashboard 強制啟用
 try {
     require('./dashboard');
@@ -45,11 +51,6 @@ const os = require('os');
 const { spawn } = require('child_process');
 const TelegramBot = require('node-telegram-bot-api');
 const { Client, GatewayIntentBits, Partials } = require('discord.js');
-
-const ConfigManager = require('./src/config');
-const SystemLogger = require('./src/utils/SystemLogger');
-
-// 🚀 初始化系統日誌持久化已移至 ensureCoreServices (按需啟動)
 
 const GolemBrain = require('./src/core/GolemBrain');
 const TaskController = require('./src/core/TaskController');
@@ -129,7 +130,7 @@ function getOrCreateGolem() {
     async function ensureCoreServices() {
         if (_isCoreInitialized) return;
 
-        // 🚀 初始化系統日誌持久化 (按需啟動)
+        // 🚀 初始化系統日誌持久化 (確保服務啟動時日誌功能就緒)
         SystemLogger.init(ConfigManager.LOG_BASE_DIR);
         console.log('📡 [Config] 運行模式: 單機 (Single-Golem Architecture)');
 
