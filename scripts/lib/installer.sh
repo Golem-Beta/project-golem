@@ -72,6 +72,61 @@ step_stop_running_system() {
     echo ""
 }
 
+# ─── Step 0.7: Environment Sanitization (Magic Mode Optimization) ───
+step_sanitize_environment() {
+    [ "${GOLEM_MAGIC_MODE:-false}" != "true" ] && return
+    
+    echo -e "  🧹 正在進行環境深度清理 (Sanitizing Environment)..."
+    log "Magic mode sanitization started"
+
+    # 1. Backup .env
+    if [ -f "$DOT_ENV_PATH" ]; then
+        mv "$DOT_ENV_PATH" "$DOT_ENV_PATH.tmp"
+        echo -e "    ${GREEN}✔${NC} 已將現有的 .env 備份至 .env.tmp"
+        log "Backed up .env to .env.tmp"
+    fi
+
+    # 2. Remove node_modules & lockfiles
+    echo -e "    ${CYAN}📦 清除舊有依賴套件與 Lockfiles...${NC}"
+    rm -rf "$SCRIPT_DIR/node_modules" "$SCRIPT_DIR/package-lock.json"
+    
+    if [ -d "$SCRIPT_DIR/web-dashboard" ]; then
+        rm -rf "$SCRIPT_DIR/web-dashboard/node_modules"
+        rm -rf "$SCRIPT_DIR/web-dashboard/.next"
+        rm -rf "$SCRIPT_DIR/web-dashboard/out"
+        rm -f "$SCRIPT_DIR/web-dashboard/package-lock.json"
+    fi
+    echo -e "    ${GREEN}✔${NC} 已清除所有 node_modules, .next, out 與 package-lock.json"
+    log "Removed node_modules, build cache, and package-lock.json files"
+
+    # 3. Remove Memory
+    local mem_dir="${USER_DATA_DIR:-./golem_memory}"
+    if [[ "$mem_dir" == ./* ]]; then
+        mem_dir="$SCRIPT_DIR/${mem_dir#./}"
+    elif [[ "$mem_dir" != /* ]]; then
+        mem_dir="$SCRIPT_DIR/$mem_dir"
+    fi
+    if [ -d "$mem_dir" ]; then
+        rm -rf "$mem_dir"
+        echo -e "    ${GREEN}✔${NC} 已清除舊有的 Golem 記憶資料庫"
+        log "Removed memory directory"
+    fi
+
+    # 4. Backup Logs
+    if [ -d "$LOG_DIR" ]; then
+        # 先關閉當前 log 檔案 (若有需要) 並更名
+        local timestamp; timestamp=$(date +%Y%m%d_%H%M%S)
+        mv "$LOG_DIR" "${LOG_DIR}-tmp-${timestamp}"
+        mkdir -p "$LOG_DIR"
+        echo -e "    ${GREEN}✔${NC} 已將舊日誌封存至 ${LOG_DIR}-tmp-${timestamp}"
+        log "Archived logs and recreated log directory"
+    fi
+
+    echo -e "  ${GREEN}✅ 環境清理完成，即將開始全新安裝流程。${NC}"
+    echo ""
+    sleep 2
+}
+
 # ─── Step 1: File Integrity ───
 step_check_files() {
     echo -e "  🔍 檢查核心檔案完整性..."
@@ -348,43 +403,42 @@ run_full_install() {
     echo -e "  ${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    # Step Check Process
+    # Step 1: Check Process
     progress_bar 1 $total_steps "檢查執行中進程"
     echo ""
     step_stop_running_system
+    
+    # Step 2: Environment Sanitization
+    progress_bar 2 $total_steps "環境深度清理"
+    echo ""
+    step_sanitize_environment
 
-    # Step 0: Node Check
-    progress_bar 2 $total_steps "檢查 Node.js 版本"
+    # Step 3: Node Check
+    progress_bar 3 $total_steps "檢查 Node.js 版本"
     echo ""
     step_prepare_node_version
 
-    # Step 1: Check files
-    progress_bar 3 $total_steps "檢查核心檔案"
+    # Step 4: Check files
+    progress_bar 4 $total_steps "檢查核心檔案"
     echo ""
     step_check_files
 
-    # Step 2: Check env
-    progress_bar 4 $total_steps "檢查環境設定"
+    # Step 5: Check env
+    progress_bar 5 $total_steps "檢查環境設定"
     echo ""
     step_check_env
 
-    # Step 3: Configure .env (Gemini Keys + System Options)
-    # 註：如果使用者已提供 .env.example，則直接使用，不強制進入配置精靈
-    # progress_bar 5 $total_steps "配置環境變數"
-    # echo ""
-    # config_wizard
-
-    # Step 4: Install core deps
+    # Step 6: Install core deps
     progress_bar 6 $total_steps "安裝核心依賴"
     echo ""
     step_install_core
 
-    # Step 5: Install dashboard
+    # Step 7: Install dashboard
     progress_bar 7 $total_steps "安裝 Dashboard"
     echo ""
     step_install_dashboard
 
-    # Step 6: Health check & Verification
+    # Step 8: Health check & Verification
     progress_bar 8 $total_steps "系統健康檢查 & 驗證"
     echo ""
     check_status
